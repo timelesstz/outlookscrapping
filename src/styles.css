@@ -168,6 +168,18 @@ main { flex: 1; width: 100%; max-width: 1200px; margin: 0 auto; padding: 1rem 1.
 .notes { color: var(--muted); font-size: 0.85rem; margin-top: 1.5rem; text-align: left; font-family: 'Consolas', ui-monospace, monospace; }
 .notes p { margin: 0.3rem 0; }
 .ok { color: var(--green); }
+.notice {
+  margin: 0 0 0.75rem;
+  padding: 0.6rem 0.85rem;
+  background: rgba(255, 176, 45, 0.08);
+  border: 1px solid rgba(255, 176, 45, 0.45);
+  border-left: 3px solid var(--amber);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+.notice strong { color: var(--amber); }
 .error { color: var(--red); font-weight: 600; text-shadow: 0 0 8px var(--red-glow); }
 .error p { color: var(--text); font-weight: 400; text-shadow: none; margin: 0.5rem 0 0.25rem; text-align: left; }
 .error .fix-list { text-align: left; margin: 0.4rem 0 0; padding-left: 1.2rem; color: var(--text); font-weight: 400; text-shadow: none; }

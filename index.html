@@ -45,7 +45,7 @@
       <p id="upload-error" class="error" hidden></p>
       <div class="notes">
         <p><span class="ok">▸</span> Works with Outlook data files (PST) and offline files (OST), ANSI or Unicode.</p>
-        <p><span class="ok">▸</span> No upload limit — any size PST/OST is accepted; it's processed locally in your browser.</p>
+        <p><span class="ok">▸</span> No upload limit — even 50–100&nbsp;GB files work. They're streamed and read locally in slices, never uploaded.</p>
       </div>
     </section>
 
@@ -86,6 +86,7 @@
         <div class="messages-layout">
           <aside id="folder-tree" aria-label="Folders"></aside>
           <div class="messages-main">
+            <p id="messages-truncated" class="notice" hidden></p>
             <div class="toolbar">
               <input type="search" id="message-search" placeholder="Filter by subject, sender…" />
               <span class="spacer"></span>

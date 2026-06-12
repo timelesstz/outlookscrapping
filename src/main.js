@@ -168,6 +168,8 @@ function onParsed(data) {
   state.messages = data.messages
   state.contacts = data.contacts
   state.addresses = data.addresses
+  state.totalMessages = data.totalMessages ?? data.messages.length
+  state.messagesTruncated = !!data.messagesTruncated
   state.selectedFolderId = null
   state.addressLimit = 500
   state.messageLimit = 500
@@ -177,11 +179,24 @@ function onParsed(data) {
   $('#file-summary').innerHTML =
     `<strong>${escapeHtml(state.fileName)}</strong> — ` +
     `${state.addresses.length.toLocaleString()} unique addresses, ` +
-    `${state.messages.length.toLocaleString()} messages, ` +
+    `${state.totalMessages.toLocaleString()} messages, ` +
     `${state.contacts.length.toLocaleString()} contacts in ${state.folders.length} folders`
   $('#count-addresses').textContent = state.addresses.length.toLocaleString()
-  $('#count-messages').textContent = state.messages.length.toLocaleString()
+  $('#count-messages').textContent = state.totalMessages.toLocaleString()
   $('#count-contacts').textContent = state.contacts.length.toLocaleString()
+
+  const banner = $('#messages-truncated')
+  if (banner) {
+    if (state.messagesTruncated) {
+      banner.innerHTML =
+        `All <strong>${state.totalMessages.toLocaleString()}</strong> messages were scanned for email addresses. ` +
+        `To stay within browser memory, only the first <strong>${state.messages.length.toLocaleString()}</strong> are shown here for browsing and message export. ` +
+        `The <strong>Email Addresses</strong> tab is complete.`
+      banner.hidden = false
+    } else {
+      banner.hidden = true
+    }
+  }
 
   renderAddresses()
   renderFolderTree()

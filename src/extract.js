@@ -94,6 +94,13 @@ export function isValidEmail(addr) {
 
 const RECIPIENT_TYPES = { 1: 'to', 2: 'cc', 3: 'bcc' }
 
+// On very large mailboxes (a 100 GB PST can hold millions of messages) we
+// can't keep a browsable summary for every message in browser memory. We
+// still scan ALL of them for email addresses — that map is memory-light — but
+// cap how many full message rows we retain so the tab stays responsive and
+// doesn't run out of memory. Address harvesting is never capped.
+const MAX_RETAINED_MESSAGES = 100000
+
 /**
  * Holds an open PST and the PSTMessage references discovered while walking it,
  * so message bodies can be decoded lazily instead of kept in memory for the
@@ -110,6 +117,8 @@ export class PstSession {
     this.folders = []
     this.messages = []
     this.contacts = []
+    this.totalMessages = 0 // every message scanned, even when not retained
+    this.messagesTruncated = false
     this.#addressMap = new Map()
     this.#progress = onProgress
     this.#processed = 0
@@ -121,6 +130,9 @@ export class PstSession {
       messages: this.messages,
       contacts: this.contacts,
       addresses: this.#finalizeAddresses(),
+      totalMessages: this.totalMessages,
+      messagesTruncated: this.messagesTruncated,
+      retainedMessages: this.messages.length,
     }
   }
 
@@ -189,7 +201,6 @@ export class PstSession {
   }
 
   #collectMessage(msg, folderId, folderPath, messageClass) {
-    const id = this.messages.length
     const senderName = safeGet(() => msg.senderName) || ''
     let senderEmail = safeGet(() => msg.senderEmailAddress) || ''
     if (!isValidEmail(senderEmail)) senderEmail = isValidEmail(senderName) ? senderName : senderEmail
@@ -210,6 +221,22 @@ export class PstSession {
       })
     }
 
+    // Harvest addresses for every message — this is the memory-light path that
+    // must scale to the whole mailbox.
+    this.totalMessages++
+    if (isValidEmail(senderEmail)) this.#addAddress(senderEmail, senderName, 'sent')
+    for (const r of recipients) {
+      if (r.email) this.#addAddress(r.email, r.name, 'received')
+    }
+
+    // Retain a browsable summary only up to the cap, to bound memory on huge
+    // mailboxes. Beyond the cap, messages are still counted and scanned above.
+    if (this.messages.length >= MAX_RETAINED_MESSAGES) {
+      this.messagesTruncated = true
+      return
+    }
+
+    const id = this.messages.length
     this.messages.push({
       id,
       folderId,
@@ -228,11 +255,6 @@ export class PstSession {
     })
     this.#messageRefs[id] = msg
     this.folders[folderId].messageCount++
-
-    if (isValidEmail(senderEmail)) this.#addAddress(senderEmail, senderName, 'sent')
-    for (const r of recipients) {
-      if (r.email) this.#addAddress(r.email, r.name, 'received')
-    }
   }
 
   #collectContact(contact) {

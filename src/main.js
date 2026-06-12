@@ -1,7 +1,11 @@
 import './styles.css'
 import { exportCsv, exportXlsx, exportTxt, exportJson, buildEml, downloadBlob, safeFilename } from './exporters.js'
+import { startCyberBackground } from './cyberbg.js'
 
 const $ = (sel) => document.querySelector(sel)
+
+const cyberCanvas = document.getElementById('cyber-bg')
+if (cyberCanvas) startCyberBackground(cyberCanvas)
 
 const worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' })
 
@@ -97,13 +101,12 @@ async function loadFile(file) {
     showUploadError('Please choose a .pst or .ost file.')
     return
   }
-  if (file.size > 500 * 1024 * 1024) {
-    $('#parse-message').textContent = 'Large file — this may take a while or run out of memory…'
-  }
+  // No upload size cap — any PST/OST is accepted. Large files simply take
+  // longer; show the size so the user knows a big scan is in progress.
   state.fileName = file.name
   dropZone.hidden = true
   $('#parse-status').hidden = false
-  $('#parse-message').textContent = `Reading ${file.name}…`
+  $('#parse-message').textContent = `Reading ${file.name} (${formatBytes(file.size)})…`
   try {
     const buffer = await file.arrayBuffer()
     worker.postMessage({ type: 'parse', buffer }, [buffer])
@@ -494,6 +497,13 @@ function renderMoreRow(selector, total, limit, onMore) {
   btn.textContent = 'Show more'
   btn.addEventListener('click', onMore)
   el.appendChild(btn)
+}
+
+function formatBytes(bytes) {
+  if (!bytes) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(1024))
+  return `${(bytes / Math.pow(1024, i)).toFixed(i ? 1 : 0)} ${units[i]}`
 }
 
 function escapeHtml(value) {

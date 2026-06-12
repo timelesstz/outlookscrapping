@@ -107,19 +107,52 @@ async function loadFile(file) {
   dropZone.hidden = true
   $('#parse-status').hidden = false
   $('#parse-message').textContent = `Reading ${file.name} (${formatBytes(file.size)})…`
-  try {
-    const buffer = await file.arrayBuffer()
-    worker.postMessage({ type: 'parse', buffer }, [buffer])
-  } catch (err) {
-    showUploadError(`Could not read this file: ${err.message}`)
+
+  // file.arrayBuffer() throws NotReadableError when Windows has the file
+  // locked — almost always because Outlook still has the PST/OST open, or
+  // because the file lives in OneDrive and is "online-only". Retry once for
+  // transient locks, then show actionable guidance instead of the raw error.
+  let buffer
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      buffer = await file.arrayBuffer()
+      break
+    } catch (err) {
+      if (attempt === 1 && err && err.name === 'NotReadableError') {
+        await new Promise((resolve) => setTimeout(resolve, 400))
+        continue
+      }
+      showFileReadError(file, err)
+      return
+    }
   }
+  worker.postMessage({ type: 'parse', buffer }, [buffer])
 }
 
-function showUploadError(message) {
+function showFileReadError(file, err) {
+  const locked = !err || err.name === 'NotReadableError' || err.name === 'SecurityError'
+  if (!locked) {
+    showUploadError(`Could not read this file: ${escapeHtml(err.message)}`, true)
+    return
+  }
+  showUploadError(
+    `<strong>Windows can't read “${escapeHtml(file.name)}” because the file is locked.</strong>` +
+      `<p>This usually means another program is still holding the file open. Try one of these:</p>` +
+      `<ol class="fix-list">` +
+      `<li><strong>Close Outlook completely</strong> — also quit it from the system tray (the little arrow near the clock), then drop the file again. Outlook locks any PST/OST it has open.</li>` +
+      `<li><strong>Upload a copy instead.</strong> Copy the file to your Desktop and load the copy — a copy isn't locked, and this also forces OneDrive "online-only" files to download fully.</li>` +
+      `</ol>` +
+      `<span class="err-detail">Technical detail: ${escapeHtml(err ? err.name : 'read failed')}</span>`,
+    true
+  )
+}
+
+function showUploadError(message, isHtml = false) {
   $('#parse-status').hidden = true
   dropZone.hidden = false
   const el = $('#upload-error')
-  el.textContent = message
+  if (isHtml) el.innerHTML = message
+  else el.textContent = message
   el.hidden = false
 }
 

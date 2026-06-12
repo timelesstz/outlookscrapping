@@ -1,4 +1,85 @@
+import { Buffer } from 'buffer'
 import { PSTFile } from 'pst-extractor'
+
+// ---------------------------------------------------------------------------
+// Large-file support
+//
+// pst-extractor normally needs the entire PST as one in-memory Buffer, which
+// caps usable files at a few hundred MB before the browser runs out of memory.
+// Every byte the library reads, however, funnels through PSTFile.readSync(),
+// so we swap that single method to pull 1 MiB slices straight from the File on
+// demand (via FileReaderSync, which only exists in Web Workers) with a small
+// LRU block cache. This lets us open multi-gigabyte PSTs without ever holding
+// the whole file in memory.
+// ---------------------------------------------------------------------------
+const BLOCK_SIZE = 1 << 20 // 1 MiB read granularity
+const MAX_CACHED_BLOCKS = 64 // ~64 MiB resident working set
+
+// Patch readSync once so a file-backed instance routes reads through its own
+// reader while plain Buffer-backed instances (used by tests) keep working.
+let pendingReader = null
+const originalReadSync = PSTFile.prototype.readSync
+PSTFile.prototype.readSync = function (buffer, length, position) {
+  const reader = this._sliceReader || pendingReader
+  if (reader) {
+    if (!this._sliceReader) this._sliceReader = reader
+    return reader(buffer, length, position)
+  }
+  return originalReadSync.call(this, buffer, length, position)
+}
+
+function makeSliceReader(file) {
+  const fileReader = new FileReaderSync()
+  const size = file.size
+  const cache = new Map() // blockIndex -> Uint8Array, iteration order = LRU
+
+  const readBlock = (index) => {
+    const cached = cache.get(index)
+    if (cached) {
+      cache.delete(index)
+      cache.set(index, cached) // mark most-recently-used
+      return cached
+    }
+    const start = index * BLOCK_SIZE
+    const end = Math.min(start + BLOCK_SIZE, size)
+    const block = new Uint8Array(fileReader.readAsArrayBuffer(file.slice(start, end)))
+    cache.set(index, block)
+    if (cache.size > MAX_CACHED_BLOCKS) cache.delete(cache.keys().next().value)
+    return block
+  }
+
+  return (buffer, length, position) => {
+    let written = 0
+    let pos = position
+    while (written < length && pos < size) {
+      const index = Math.floor(pos / BLOCK_SIZE)
+      const block = readBlock(index)
+      const offset = pos - index * BLOCK_SIZE
+      const take = Math.min(block.length - offset, length - written)
+      if (take <= 0) break
+      buffer.set(block.subarray(offset, offset + take), written)
+      written += take
+      pos += take
+    }
+    return written
+  }
+}
+
+function openPstFile(source) {
+  // Stream from a File/Blob without loading it all into memory.
+  if (typeof Blob !== 'undefined' && source instanceof Blob) {
+    pendingReader = makeSliceReader(source)
+    try {
+      const pst = new PSTFile(Buffer.alloc(0)) // header read goes through pendingReader
+      pst._sliceReader = pendingReader
+      return pst
+    } finally {
+      pendingReader = null
+    }
+  }
+  // Buffer path (Node tests, small files): hand the whole thing to the library.
+  return new PSTFile(source)
+}
 
 const EMAIL_RE = /^[^\s@<>,;:"'()[\]\\]+@[^\s@<>,;:"'()[\]\\]+\.[A-Za-z]{2,}$/
 // Exchange IMCEA-encapsulated foreign addresses (IMCEANOTES-..., IMCEAEX-...)
@@ -21,8 +102,8 @@ const RECIPIENT_TYPES = { 1: 'to', 2: 'cc', 3: 'bcc' }
 export class PstSession {
   #messageRefs = []
 
-  constructor(buffer) {
-    this.pstFile = new PSTFile(buffer)
+  constructor(source) {
+    this.pstFile = openPstFile(source)
   }
 
   parse(onProgress = () => {}) {

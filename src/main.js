@@ -60,7 +60,9 @@ worker.onmessage = (e) => {
         pendingRequests.delete(data.reqId)
         pending.reject(new Error(data.message))
       } else {
-        showUploadError(`Could not read this file: ${data.message}`)
+        // A parse-time failure. If it was a locked-file read, show the same
+        // actionable guidance as the up-front probe; otherwise surface the message.
+        showFileReadError(state.fileName, { name: data.errorName, message: data.message })
       }
       break
     }
@@ -104,39 +106,39 @@ async function loadFile(file) {
   // No upload size cap — any PST/OST is accepted. Large files simply take
   // longer; show the size so the user knows a big scan is in progress.
   state.fileName = file.name
+  state.fileSize = file.size
   dropZone.hidden = true
   $('#parse-status').hidden = false
-  $('#parse-message').textContent = `Reading ${file.name} (${formatBytes(file.size)})…`
+  $('#parse-message').textContent = `Opening ${file.name} (${formatBytes(file.size)})…`
 
-  // file.arrayBuffer() throws NotReadableError when Windows has the file
-  // locked — almost always because Outlook still has the PST/OST open, or
-  // because the file lives in OneDrive and is "online-only". Retry once for
-  // transient locks, then show actionable guidance instead of the raw error.
-  let buffer
+  // Probe a few bytes first. This cheaply detects a locked file (Outlook still
+  // has it open, or a OneDrive "online-only" placeholder) without reading the
+  // whole thing into memory. Retry once for transient locks. The full file is
+  // never loaded here — the worker streams it in slices, so size is unlimited.
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      buffer = await file.arrayBuffer()
+      await file.slice(0, 4).arrayBuffer()
       break
     } catch (err) {
       if (attempt === 1 && err && err.name === 'NotReadableError') {
         await new Promise((resolve) => setTimeout(resolve, 400))
         continue
       }
-      showFileReadError(file, err)
+      showFileReadError(file.name, err)
       return
     }
   }
-  worker.postMessage({ type: 'parse', buffer }, [buffer])
+  worker.postMessage({ type: 'parse', file })
 }
 
-function showFileReadError(file, err) {
+function showFileReadError(fileName, err) {
   const locked = !err || err.name === 'NotReadableError' || err.name === 'SecurityError'
   if (!locked) {
-    showUploadError(`Could not read this file: ${escapeHtml(err.message)}`, true)
+    showUploadError(`Could not read this file: ${escapeHtml(err.message || String(err))}`, true)
     return
   }
   showUploadError(
-    `<strong>Windows can't read “${escapeHtml(file.name)}” because the file is locked.</strong>` +
+    `<strong>Windows can't read “${escapeHtml(fileName)}” because the file is locked.</strong>` +
       `<p>This usually means another program is still holding the file open. Try one of these:</p>` +
       `<ol class="fix-list">` +
       `<li><strong>Close Outlook completely</strong> — also quit it from the system tray (the little arrow near the clock), then drop the file again. Outlook locks any PST/OST it has open.</li>` +

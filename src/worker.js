@@ -7,7 +7,10 @@ self.onmessage = (e) => {
   const data = e.data
   try {
     if (data.type === 'parse') {
-      session = new PstSession(Buffer.from(data.buffer))
+      // Prefer the File (streamed in slices, any size); fall back to a
+      // transferred buffer for callers that still send one.
+      const source = data.file ? data.file : Buffer.from(data.buffer)
+      session = new PstSession(source)
       const result = session.parse((progress) => {
         self.postMessage({ type: 'progress', ...progress })
       })
@@ -25,6 +28,7 @@ self.onmessage = (e) => {
       type: 'error',
       reqId: data.reqId,
       message: err instanceof Error ? err.message : String(err),
+      errorName: err instanceof Error ? err.name : '',
     })
   }
 }

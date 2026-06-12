@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Timeless Outlook Extractor</title>
+  <meta name="description" content="Extract email addresses, messages, and contacts from Outlook PST/OST files — entirely in your browser. No installation, no upload to any server." />
+  <link rel="icon" href="data:image/svg+xml,&lt;svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'&gt;&lt;text y='80' font-size='80'&gt;📧&lt;/text&gt;&lt;/svg&gt;" />
+</head>
+<body>
+  <header class="app-header">
+    <div>
+      <h1>📧 Timeless Outlook Extractor</h1>
+      <p class="tagline">Extract email addresses, messages &amp; contacts from Outlook PST / OST files</p>
+    </div>
+    <div class="privacy-badge" title="The file is parsed by JavaScript running in this page. Nothing is uploaded.">
+      🔒 100% local — your file never leaves your computer
+    </div>
+  </header>
+
+  <main>
+    <!-- Upload screen -->
+    <section id="upload-screen">
+      <div id="drop-zone" tabindex="0" role="button" aria-label="Choose or drop a PST or OST file">
+        <div class="drop-icon">📂</div>
+        <p class="drop-title">Drop your <strong>.pst</strong> or <strong>.ost</strong> file here</p>
+        <p class="drop-sub">or click to browse</p>
+        <input type="file" id="file-input" accept=".pst,.ost" hidden />
+      </div>
+      <div id="parse-status" hidden>
+        <div class="spinner"></div>
+        <p id="parse-message">Reading file…</p>
+      </div>
+      <p id="upload-error" class="error" hidden></p>
+      <div class="notes">
+        <p>Works with Outlook data files (PST) and offline files (OST), ANSI or Unicode format.</p>
+        <p>Very large files (&gt; ~500&nbsp;MB) may exceed the browser's memory — for those, use a desktop tool.</p>
+      </div>
+    </section>
+
+    <!-- Results screen -->
+    <section id="results-screen" hidden>
+      <div class="results-bar">
+        <div id="file-summary"></div>
+        <button id="reset-btn" class="btn btn-secondary">Load another file</button>
+      </div>
+
+      <nav class="tabs" role="tablist">
+        <button class="tab active" data-tab="addresses" role="tab">Email Addresses <span id="count-addresses" class="count"></span></button>
+        <button class="tab" data-tab="messages" role="tab">Messages <span id="count-messages" class="count"></span></button>
+        <button class="tab" data-tab="contacts" role="tab">Contacts <span id="count-contacts" class="count"></span></button>
+      </nav>
+
+      <!-- Addresses tab -->
+      <div id="tab-addresses" class="tab-panel">
+        <div class="toolbar">
+          <input type="search" id="address-search" placeholder="Filter addresses…" />
+          <span class="spacer"></span>
+          <span class="export-label">Export:</span>
+          <button class="btn" data-export="addresses-csv">CSV</button>
+          <button class="btn" data-export="addresses-xlsx">Excel</button>
+          <button class="btn" data-export="addresses-txt">TXT</button>
+        </div>
+        <div class="table-wrap">
+          <table id="address-table">
+            <thead><tr><th>Email address</th><th>Name</th><th class="num">Sent</th><th class="num">Received</th><th class="num">Total</th><th>In contacts</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p id="address-more" class="more-row" hidden></p>
+      </div>
+
+      <!-- Messages tab -->
+      <div id="tab-messages" class="tab-panel" hidden>
+        <div class="messages-layout">
+          <aside id="folder-tree" aria-label="Folders"></aside>
+          <div class="messages-main">
+            <div class="toolbar">
+              <input type="search" id="message-search" placeholder="Filter by subject, sender…" />
+              <span class="spacer"></span>
+              <span class="export-label">Export list:</span>
+              <button class="btn" data-export="messages-csv">CSV</button>
+              <button class="btn" data-export="messages-xlsx">Excel</button>
+              <button class="btn" data-export="messages-json" title="Includes full message bodies">JSON&nbsp;+&nbsp;bodies</button>
+            </div>
+            <div class="table-wrap">
+              <table id="message-table">
+                <thead><tr><th>Date</th><th>From</th><th>Subject</th><th>To</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <p id="message-more" class="more-row" hidden></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Contacts tab -->
+      <div id="tab-contacts" class="tab-panel" hidden>
+        <div class="toolbar">
+          <input type="search" id="contact-search" placeholder="Filter contacts…" />
+          <span class="spacer"></span>
+          <span class="export-label">Export:</span>
+          <button class="btn" data-export="contacts-csv">CSV</button>
+          <button class="btn" data-export="contacts-xlsx">Excel</button>
+        </div>
+        <div class="table-wrap">
+          <table id="contact-table">
+            <thead><tr><th>Name</th><th>Email</th><th>Mobile</th><th>Business phone</th><th>Company</th><th>Job title</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Message viewer -->
+  <div id="viewer-overlay" hidden>
+    <div id="viewer" role="dialog" aria-modal="true">
+      <div class="viewer-head">
+        <div class="viewer-meta">
+          <h2 id="viewer-subject"></h2>
+          <p id="viewer-from"></p>
+          <p id="viewer-to"></p>
+          <p id="viewer-date"></p>
+        </div>
+        <div class="viewer-actions">
+          <button id="viewer-eml" class="btn">Save as .eml</button>
+          <button id="viewer-close" class="btn btn-secondary" aria-label="Close">✕</button>
+        </div>
+      </div>
+      <div id="viewer-body-wrap">
+        <pre id="viewer-body-text" hidden></pre>
+        <iframe id="viewer-body-html" sandbox="" title="Message body" hidden></iframe>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <p>Timeless Outlook Extractor — open source, runs entirely in your browser.</p>
+  </footer>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

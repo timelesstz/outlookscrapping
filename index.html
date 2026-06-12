@@ -6,8 +6,8 @@
   <title>Timeless Outlook Extractor</title>
   <meta name="description" content="Extract email addresses, messages, and contacts from Outlook PST/OST files — entirely in your browser. No installation, no upload to any server." />
   <link rel="icon" href="data:image/svg+xml,&lt;svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'&gt;&lt;text y='80' font-size='80'&gt;🛡️&lt;/text&gt;&lt;/svg&gt;" />
-  <script type="module" crossorigin src="./assets/index-DRk_PjY2.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-xi_8EsLz.css">
+  <script type="module" crossorigin src="./assets/index-xpB1wyZR.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-Dk8p9UWz.css">
 </head>
 <body>
   <canvas id="cyber-bg" aria-hidden="true"></canvas>
@@ -40,6 +40,13 @@
         </div>
         <input type="file" id="file-input" accept=".pst,.ost" hidden />
       </div>
+      <fieldset id="scope-select">
+        <legend>Extract</legend>
+        <label class="scope-opt"><input type="checkbox" id="scope-addresses" checked /><span>Email addresses</span></label>
+        <label class="scope-opt"><input type="checkbox" id="scope-messages" checked /><span>Messages</span></label>
+        <label class="scope-opt"><input type="checkbox" id="scope-contacts" checked /><span>Contacts</span></label>
+        <p class="scope-hint">Pick only what you need — fewer categories load faster and use far less memory on large files.</p>
+      </fieldset>
       <div id="parse-status" hidden>
         <div class="spinner"></div>
         <p id="parse-message">Reading file…</p>

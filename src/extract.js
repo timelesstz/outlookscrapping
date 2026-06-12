@@ -92,6 +92,21 @@ export function isValidEmail(addr) {
   return EMAIL_RE.test(trimmed) && !IMCEA_RE.test(trimmed)
 }
 
+// Reduce an address to one canonical form so the same mailbox never shows up
+// as several rows. Strips a "Display Name <addr>" wrapper, mailto:/smtp:
+// schemes and stray angle brackets, then lower-cases it. Returns '' when the
+// result isn't a real, deliverable address. Lower-casing is what guarantees
+// John@X.com and john@x.com collapse to a single entry.
+export function canonicalEmail(raw) {
+  if (typeof raw !== 'string') return ''
+  let s = raw.trim()
+  const wrapped = s.match(/<([^<>]+)>/) // "Name <addr>" or "<addr>"
+  if (wrapped) s = wrapped[1].trim()
+  s = s.replace(/^(?:mailto|smtp):/i, '').trim()
+  if (!EMAIL_RE.test(s) || IMCEA_RE.test(s)) return ''
+  return s.toLowerCase()
+}
+
 const RECIPIENT_TYPES = { 1: 'to', 2: 'cc', 3: 'bcc' }
 
 // On very large mailboxes (a 100 GB PST can hold millions of messages) we
@@ -212,8 +227,9 @@ export class PstSession {
 
   #collectMessage(msg, folderId, folderPath, messageClass) {
     const senderName = safeGet(() => msg.senderName) || ''
-    let senderEmail = safeGet(() => msg.senderEmailAddress) || ''
-    if (!isValidEmail(senderEmail)) senderEmail = isValidEmail(senderName) ? senderName : senderEmail
+    // Prefer the sender's address field; some items stash the address in the
+    // name field instead, so fall back to it.
+    const senderEmail = canonicalEmail(safeGet(() => msg.senderEmailAddress)) || canonicalEmail(senderName)
 
     const recipients = []
     const count = safeGet(() => msg.numberOfRecipients) || 0
@@ -221,9 +237,7 @@ export class PstSession {
       let r = null
       try { r = msg.getRecipient(i) } catch { continue }
       if (!r) continue
-      const smtp = safeGet(() => r.smtpAddress) || ''
-      const fallback = safeGet(() => r.emailAddress) || ''
-      const email = isValidEmail(smtp) ? smtp : (isValidEmail(fallback) ? fallback : '')
+      const email = canonicalEmail(safeGet(() => r.smtpAddress)) || canonicalEmail(safeGet(() => r.emailAddress))
       recipients.push({
         name: safeGet(() => r.displayName) || '',
         email,
@@ -235,7 +249,7 @@ export class PstSession {
     // must scale to the whole mailbox.
     this.totalMessages++
     if (this.#scope.addresses) {
-      if (isValidEmail(senderEmail)) this.#addAddress(senderEmail, senderName, 'sent')
+      if (senderEmail) this.#addAddress(senderEmail, senderName, 'sent')
       for (const r of recipients) {
         if (r.email) this.#addAddress(r.email, r.name, 'received')
       }
@@ -258,7 +272,7 @@ export class PstSession {
       folderPath,
       date: safeGet(() => msg.clientSubmitTime) || safeGet(() => msg.messageDeliveryTime) || null,
       senderName,
-      senderEmail: isValidEmail(senderEmail) ? senderEmail : '',
+      senderEmail, // canonical or ''
       subject: safeGet(() => msg.subject) || '',
       to: safeGet(() => msg.displayTo) || '',
       cc: safeGet(() => msg.displayCC) || '',
@@ -275,8 +289,8 @@ export class PstSession {
   #collectContact(contact) {
     const emails = []
     for (const key of ['email1EmailAddress', 'email2EmailAddress', 'email3EmailAddress']) {
-      const addr = safeGet(() => contact[key]) || ''
-      if (isValidEmail(addr)) emails.push(addr.trim())
+      const addr = canonicalEmail(safeGet(() => contact[key]))
+      if (addr && !emails.includes(addr)) emails.push(addr)
     }
     const name = safeGet(() => contact.displayName) || ''
     if (this.#scope.addresses) {
@@ -297,17 +311,18 @@ export class PstSession {
   }
 
   #addAddress(email, name, role) {
-    const key = email.trim().toLowerCase()
-    let entry = this.#addressMap.get(key)
+    // email arrives already canonical (lower-cased + validated), so the map key
+    // and the stored/displayed address are identical — no near-duplicate rows.
+    let entry = this.#addressMap.get(email)
     if (!entry) {
-      entry = { email: email.trim(), names: new Map(), sent: 0, received: 0, contact: false }
-      this.#addressMap.set(key, entry)
+      entry = { email, names: new Map(), sent: 0, received: 0, contact: false }
+      this.#addressMap.set(email, entry)
     }
     if (role === 'sent') entry.sent++
     else if (role === 'received') entry.received++
     else entry.contact = true
     const cleanName = (name || '').trim()
-    if (cleanName && !isValidEmail(cleanName)) {
+    if (cleanName && !canonicalEmail(cleanName)) {
       entry.names.set(cleanName, (entry.names.get(cleanName) || 0) + 1)
     }
   }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFileSync, existsSync } from 'node:fs'
-import { PstSession, isValidEmail } from '../src/extract.js'
+import { PstSession, isValidEmail, canonicalEmail } from '../src/extract.js'
 
 // Sample mailboxes shipped with the pst-extractor package
 const FIXTURES = [
@@ -14,6 +14,14 @@ assert.ok(!isValidEmail(''))
 assert.ok(!isValidEmail('no-at-sign'))
 assert.ok(!isValidEmail('IMCEANOTES-+22Jim+20Lokay+22@ENRON.com'))
 
+// Canonicalisation collapses case / scheme / angle-bracket variants to one form.
+assert.equal(canonicalEmail('John@Example.com'), 'john@example.com')
+assert.equal(canonicalEmail('<john@example.com>'), 'john@example.com')
+assert.equal(canonicalEmail('SMTP:John@Example.com'), 'john@example.com')
+assert.equal(canonicalEmail('mailto:john@example.com'), 'john@example.com')
+assert.equal(canonicalEmail('"John Doe" <John@Example.com>'), 'john@example.com')
+assert.equal(canonicalEmail('not-an-email'), '')
+
 for (const fixture of FIXTURES) {
   if (!existsSync(fixture)) {
     console.warn(`SKIP ${fixture} (fixture not found)`)
@@ -26,9 +34,14 @@ for (const fixture of FIXTURES) {
   assert.ok(result.folders.length > 1, `${fixture}: expected folders`)
   assert.ok(result.messages.length > 0, `${fixture}: expected messages`)
   assert.ok(result.addresses.length > 0, `${fixture}: expected harvested addresses`)
+  const seen = new Set()
   for (const addr of result.addresses) {
     assert.ok(isValidEmail(addr.email), `${fixture}: invalid harvested address: ${addr.email}`)
     assert.equal(addr.total, addr.sent + addr.received)
+    assert.equal(addr.email, addr.email.toLowerCase(), `${fixture}: address not canonical: ${addr.email}`)
+    const key = addr.email.toLowerCase()
+    assert.ok(!seen.has(key), `${fixture}: duplicate address harvested: ${addr.email}`)
+    seen.add(key)
   }
   const withDates = result.messages.filter((m) => m.date instanceof Date)
   assert.ok(withDates.length > 0, `${fixture}: expected message dates`)

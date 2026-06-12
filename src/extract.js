@@ -113,7 +113,12 @@ export class PstSession {
     this.pstFile = openPstFile(source)
   }
 
-  parse(onProgress = () => {}) {
+  parse(onProgress = () => {}, scope) {
+    this.#scope = {
+      addresses: scope ? scope.addresses !== false : true,
+      messages: scope ? scope.messages !== false : true,
+      contacts: scope ? scope.contacts !== false : true,
+    }
     this.folders = []
     this.messages = []
     this.contacts = []
@@ -152,6 +157,7 @@ export class PstSession {
   #addressMap
   #progress
   #processed
+  #scope = { addresses: true, messages: true, contacts: true }
 
   #walk(folder, parentPath, parentId) {
     const id = this.folders.length
@@ -194,10 +200,14 @@ export class PstSession {
   #collect(item, folderId, folderPath) {
     const messageClass = safeGet(() => item.messageClass) || ''
     if (messageClass.startsWith('IPM.Contact')) {
-      this.#collectContact(item)
+      // Process contacts when either Contacts or Addresses is in scope.
+      if (this.#scope.contacts || this.#scope.addresses) this.#collectContact(item)
       return
     }
-    this.#collectMessage(item, folderId, folderPath, messageClass)
+    // Process messages when either Messages or Addresses is in scope.
+    if (this.#scope.messages || this.#scope.addresses) {
+      this.#collectMessage(item, folderId, folderPath, messageClass)
+    }
   }
 
   #collectMessage(msg, folderId, folderPath, messageClass) {
@@ -224,10 +234,15 @@ export class PstSession {
     // Harvest addresses for every message — this is the memory-light path that
     // must scale to the whole mailbox.
     this.totalMessages++
-    if (isValidEmail(senderEmail)) this.#addAddress(senderEmail, senderName, 'sent')
-    for (const r of recipients) {
-      if (r.email) this.#addAddress(r.email, r.name, 'received')
+    if (this.#scope.addresses) {
+      if (isValidEmail(senderEmail)) this.#addAddress(senderEmail, senderName, 'sent')
+      for (const r of recipients) {
+        if (r.email) this.#addAddress(r.email, r.name, 'received')
+      }
     }
+
+    // Nothing more to keep when the user didn't ask for the message list.
+    if (!this.#scope.messages) return
 
     // Retain a browsable summary only up to the cap, to bound memory on huge
     // mailboxes. Beyond the cap, messages are still counted and scanned above.
@@ -263,8 +278,13 @@ export class PstSession {
       const addr = safeGet(() => contact[key]) || ''
       if (isValidEmail(addr)) emails.push(addr.trim())
     }
-    const entry = {
-      name: safeGet(() => contact.displayName) || '',
+    const name = safeGet(() => contact.displayName) || ''
+    if (this.#scope.addresses) {
+      for (const addr of emails) this.#addAddress(addr, name, 'contact')
+    }
+    if (!this.#scope.contacts) return
+    this.contacts.push({
+      name,
       firstName: safeGet(() => contact.givenName) || '',
       lastName: safeGet(() => contact.surname) || '',
       emails,
@@ -273,9 +293,7 @@ export class PstSession {
       homePhone: safeGet(() => contact.homeTelephoneNumber) || '',
       company: safeGet(() => contact.companyName) || '',
       jobTitle: safeGet(() => contact.title) || '',
-    }
-    this.contacts.push(entry)
-    for (const addr of emails) this.#addAddress(addr, entry.name, 'contact')
+    })
   }
 
   #addAddress(email, name, role) {

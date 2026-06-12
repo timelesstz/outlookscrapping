@@ -165,6 +165,36 @@ main { flex: 1; width: 100%; max-width: 1200px; margin: 0 auto; padding: 1rem 1.
 .drop-title strong { color: var(--red); }
 .drop-sub { color: var(--muted); margin: 0; }
 .drop-sub strong { color: var(--amber); }
+#scope-select {
+  margin: 1.25rem 0 0;
+  border: 1px solid var(--border-red);
+  border-radius: var(--radius);
+  background: rgba(20, 20, 29, 0.6);
+  padding: 0.75rem 1rem 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1.25rem;
+  align-items: center;
+}
+#scope-select legend {
+  padding: 0 0.5rem;
+  color: #ff9fac;
+  font-family: 'Consolas', ui-monospace, monospace;
+  letter-spacing: 1px;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+}
+.scope-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  cursor: pointer;
+  font-size: 0.92rem;
+  user-select: none;
+}
+.scope-opt input { width: 17px; height: 17px; accent-color: var(--red); cursor: pointer; }
+.scope-hint { flex-basis: 100%; margin: 0.25rem 0 0; color: var(--muted); font-size: 0.8rem; text-align: left; }
+
 .notes { color: var(--muted); font-size: 0.85rem; margin-top: 1.5rem; text-align: left; font-family: 'Consolas', ui-monospace, monospace; }
 .notes p { margin: 0.3rem 0; }
 .ok { color: var(--green); }

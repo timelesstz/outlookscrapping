@@ -38,6 +38,13 @@
         </div>
         <input type="file" id="file-input" accept=".pst,.ost" hidden />
       </div>
+      <fieldset id="scope-select">
+        <legend>Extract</legend>
+        <label class="scope-opt"><input type="checkbox" id="scope-addresses" checked /><span>Email addresses</span></label>
+        <label class="scope-opt"><input type="checkbox" id="scope-messages" checked /><span>Messages</span></label>
+        <label class="scope-opt"><input type="checkbox" id="scope-contacts" checked /><span>Contacts</span></label>
+        <p class="scope-hint">Pick only what you need — fewer categories load faster and use far less memory on large files.</p>
+      </fieldset>
       <div id="parse-status" hidden>
         <div class="spinner"></div>
         <p id="parse-message">Reading file…</p>

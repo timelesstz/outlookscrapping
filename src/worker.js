@@ -13,7 +13,7 @@ self.onmessage = (e) => {
       session = new PstSession(source)
       const result = session.parse((progress) => {
         self.postMessage({ type: 'progress', ...progress })
-      })
+      }, data.scope)
       self.postMessage({ type: 'parsed', ...result })
     } else if (data.type === 'details') {
       if (!session) throw new Error('No PST file loaded')

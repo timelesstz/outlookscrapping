@@ -105,9 +105,20 @@ async function loadFile(file) {
   }
   // No upload size cap — any PST/OST is accepted. Large files simply take
   // longer; show the size so the user knows a big scan is in progress.
+  const scope = {
+    addresses: $('#scope-addresses').checked,
+    messages: $('#scope-messages').checked,
+    contacts: $('#scope-contacts').checked,
+  }
+  if (!scope.addresses && !scope.messages && !scope.contacts) {
+    showUploadError('Select at least one thing to extract (addresses, messages, or contacts).')
+    return
+  }
+  state.scope = scope
   state.fileName = file.name
   state.fileSize = file.size
   dropZone.hidden = true
+  $('#scope-select').hidden = true
   $('#parse-status').hidden = false
   $('#parse-message').textContent = `Opening ${file.name} (${formatBytes(file.size)})…`
 
@@ -128,7 +139,7 @@ async function loadFile(file) {
       return
     }
   }
-  worker.postMessage({ type: 'parse', file })
+  worker.postMessage({ type: 'parse', file, scope })
 }
 
 function showFileReadError(fileName, err) {
@@ -152,6 +163,7 @@ function showFileReadError(fileName, err) {
 function showUploadError(message, isHtml = false) {
   $('#parse-status').hidden = true
   dropZone.hidden = false
+  $('#scope-select').hidden = false
   const el = $('#upload-error')
   if (isHtml) el.innerHTML = message
   else el.textContent = message
@@ -174,16 +186,21 @@ function onParsed(data) {
   state.addressLimit = 500
   state.messageLimit = 500
 
+  const scope = state.scope || { addresses: true, messages: true, contacts: true }
   $('#upload-screen').hidden = true
   $('#results-screen').hidden = false
+
+  const summaryParts = []
+  if (scope.addresses) summaryParts.push(`${state.addresses.length.toLocaleString()} unique addresses`)
+  if (scope.messages) summaryParts.push(`${state.totalMessages.toLocaleString()} messages`)
+  if (scope.contacts) summaryParts.push(`${state.contacts.length.toLocaleString()} contacts`)
   $('#file-summary').innerHTML =
     `<strong>${escapeHtml(state.fileName)}</strong> — ` +
-    `${state.addresses.length.toLocaleString()} unique addresses, ` +
-    `${state.totalMessages.toLocaleString()} messages, ` +
-    `${state.contacts.length.toLocaleString()} contacts in ${state.folders.length} folders`
+    `${summaryParts.join(', ')} in ${state.folders.length} folders`
   $('#count-addresses').textContent = state.addresses.length.toLocaleString()
   $('#count-messages').textContent = state.totalMessages.toLocaleString()
   $('#count-contacts').textContent = state.contacts.length.toLocaleString()
+  applyScopeToTabs(scope)
 
   const banner = $('#messages-truncated')
   if (banner) {
@@ -205,14 +222,27 @@ function onParsed(data) {
 }
 
 // Tabs
-document.querySelectorAll('.tab').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b === btn))
-    document.querySelectorAll('.tab-panel').forEach((p) => {
-      p.hidden = p.id !== `tab-${btn.dataset.tab}`
-    })
+function activateTab(name) {
+  document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === name))
+  document.querySelectorAll('.tab-panel').forEach((p) => {
+    p.hidden = p.id !== `tab-${name}`
   })
+}
+
+document.querySelectorAll('.tab').forEach((btn) => {
+  btn.addEventListener('click', () => activateTab(btn.dataset.tab))
 })
+
+// Show only the tabs that were extracted, and open the first available one.
+function applyScopeToTabs(scope) {
+  let first = null
+  document.querySelectorAll('.tab').forEach((btn) => {
+    const on = scope[btn.dataset.tab] !== false
+    btn.hidden = !on
+    if (on && !first) first = btn.dataset.tab
+  })
+  if (first) activateTab(first)
+}
 
 // ---------------------------------------------------------------------------
 // Addresses tab

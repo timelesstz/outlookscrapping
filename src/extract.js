@@ -1,5 +1,8 @@
 import { Buffer } from 'buffer'
 import { PSTFile } from 'pst-extractor'
+import { ForensicCollector, classifyFolder } from './forensic.js'
+
+const MAX_ATTACH_NAMES = 20 // names captured per message for the forensic scan
 
 // ---------------------------------------------------------------------------
 // Large-file support
@@ -133,6 +136,8 @@ export class PstSession {
       addresses: scope ? scope.addresses !== false : true,
       messages: scope ? scope.messages !== false : true,
       contacts: scope ? scope.contacts !== false : true,
+      forensic: scope ? scope.forensic === true : false,
+      deepScan: scope ? scope.deepScan === true : false,
     }
     this.folders = []
     this.messages = []
@@ -140,16 +145,18 @@ export class PstSession {
     this.totalMessages = 0 // every message scanned, even when not retained
     this.messagesTruncated = false
     this.#addressMap = new Map()
+    this.#forensic = this.#scope.forensic ? new ForensicCollector({ deepScan: this.#scope.deepScan }) : null
     this.#progress = onProgress
     this.#processed = 0
 
-    this.#walk(this.pstFile.getRootFolder(), '', null)
+    this.#walk(this.pstFile.getRootFolder(), '', null, 'other')
 
     return {
       folders: this.folders,
       messages: this.messages,
       contacts: this.contacts,
       addresses: this.#finalizeAddresses(),
+      forensic: this.#forensic ? this.#finalizeForensic() : null,
       totalMessages: this.totalMessages,
       messagesTruncated: this.messagesTruncated,
       retainedMessages: this.messages.length,
@@ -170,15 +177,17 @@ export class PstSession {
   }
 
   #addressMap
+  #forensic
   #progress
   #processed
-  #scope = { addresses: true, messages: true, contacts: true }
+  #scope = { addresses: true, messages: true, contacts: true, forensic: false, deepScan: false }
 
-  #walk(folder, parentPath, parentId) {
+  #walk(folder, parentPath, parentId, parentCategory) {
     const id = this.folders.length
     const name = safeGet(() => folder.displayName) || (parentId === null ? 'Root' : '(unnamed)')
     const path = parentPath ? `${parentPath}/${name}` : name
-    this.folders.push({ id, parentId, name, path, messageCount: 0 })
+    const category = parentId === null ? 'other' : classifyFolder(name, parentCategory)
+    this.folders.push({ id, parentId, name, path, category, messageCount: 0 })
 
     if (safeGet(() => folder.contentCount) > 0) {
       for (;;) {
@@ -190,7 +199,7 @@ export class PstSession {
         }
         if (!child) break
         try {
-          this.#collect(child, id, path)
+          this.#collect(child, id, path, category)
         } catch { /* skip unreadable item */ }
         this.#processed++
         if (this.#processed % 100 === 0) {
@@ -208,24 +217,24 @@ export class PstSession {
       try {
         subFolders = folder.getSubFolders()
       } catch { /* unreadable subtree */ }
-      for (const sub of subFolders) this.#walk(sub, path, id)
+      for (const sub of subFolders) this.#walk(sub, path, id, category)
     }
   }
 
-  #collect(item, folderId, folderPath) {
+  #collect(item, folderId, folderPath, folderCategory) {
     const messageClass = safeGet(() => item.messageClass) || ''
     if (messageClass.startsWith('IPM.Contact')) {
       // Process contacts when either Contacts or Addresses is in scope.
       if (this.#scope.contacts || this.#scope.addresses) this.#collectContact(item)
       return
     }
-    // Process messages when either Messages or Addresses is in scope.
-    if (this.#scope.messages || this.#scope.addresses) {
-      this.#collectMessage(item, folderId, folderPath, messageClass)
+    // Process messages when Messages, Addresses, or Forensic is in scope.
+    if (this.#scope.messages || this.#scope.addresses || this.#scope.forensic) {
+      this.#collectMessage(item, folderId, folderPath, messageClass, folderCategory)
     }
   }
 
-  #collectMessage(msg, folderId, folderPath, messageClass) {
+  #collectMessage(msg, folderId, folderPath, messageClass, folderCategory) {
     const senderName = safeGet(() => msg.senderName) || ''
     // Prefer the sender's address field; some items stash the address in the
     // name field instead, so fall back to it.
@@ -255,6 +264,25 @@ export class PstSession {
       }
     }
 
+    // Common metadata (computed once, reused by forensic + retained row).
+    const date = safeGet(() => msg.clientSubmitTime) || safeGet(() => msg.messageDeliveryTime) || null
+    const subject = safeGet(() => msg.subject) || ''
+    const hasAttachments = !!safeGet(() => msg.hasAttachments)
+    const isRead = !!safeGet(() => msg.isRead)
+    const willRetain = this.#scope.messages && this.messages.length < MAX_RETAINED_MESSAGES
+
+    // Feed the forensic collector for EVERY message (all folders), regardless
+    // of the retention cap — the report must reflect the whole mailbox.
+    if (this.#forensic) {
+      this.#forensic.addMessage({
+        id: willRetain ? this.messages.length : null,
+        subject, senderName, senderEmail, date, folderPath, folderCategory,
+        hasAttachments, isRead,
+        attachmentNames: hasAttachments ? this.#attachmentNames(msg) : [],
+        bodyText: this.#scope.deepScan ? this.#messageText(msg) : '',
+      })
+    }
+
     // Nothing more to keep when the user didn't ask for the message list.
     if (!this.#scope.messages) return
 
@@ -270,20 +298,46 @@ export class PstSession {
       id,
       folderId,
       folderPath,
-      date: safeGet(() => msg.clientSubmitTime) || safeGet(() => msg.messageDeliveryTime) || null,
+      date,
       senderName,
       senderEmail, // canonical or ''
-      subject: safeGet(() => msg.subject) || '',
+      subject,
       to: safeGet(() => msg.displayTo) || '',
       cc: safeGet(() => msg.displayCC) || '',
       bcc: safeGet(() => msg.displayBCC) || '',
       recipients,
       messageClass,
-      hasAttachments: !!safeGet(() => msg.hasAttachments),
-      isRead: !!safeGet(() => msg.isRead),
+      hasAttachments,
+      isRead,
     })
     this.#messageRefs[id] = msg
     this.folders[folderId].messageCount++
+  }
+
+  /** Attachment filenames (names only, capped) for the forensic scan. */
+  #attachmentNames(msg) {
+    const names = []
+    const n = Math.min(safeGet(() => msg.numberOfAttachments) || 0, MAX_ATTACH_NAMES)
+    for (let i = 0; i < n; i++) {
+      let a = null
+      try { a = msg.getAttachment(i) } catch { continue }
+      if (!a) continue
+      const name = safeGet(() => a.longFilename) || safeGet(() => a.filename) || safeGet(() => a.displayName) || ''
+      if (name) names.push(name)
+    }
+    return names
+  }
+
+  /** Plain-text body for deep content scanning (HTML stripped as a fallback). */
+  #messageText(msg) {
+    let text = ''
+    try { text = msg.body || '' } catch { /* corrupt */ }
+    if (!text) {
+      let html = ''
+      try { html = msg.bodyHTML || '' } catch { /* corrupt */ }
+      text = html.replace(/<[^>]+>/g, ' ')
+    }
+    return text
   }
 
   #collectContact(contact) {
@@ -346,6 +400,52 @@ export class PstSession {
     }
     out.sort((a, b) => b.total - a.total || a.email.localeCompare(b.email))
     return out
+  }
+
+  // Merge the collector's report with top-party/domain stats derived from the
+  // address map (which already tallies per-address sent/received counts).
+  #finalizeForensic() {
+    const report = this.#forensic.finalize()
+    const addrs = [...this.#addressMap.values()]
+
+    const topSenders = addrs.filter((a) => a.sent > 0)
+      .sort((a, b) => b.sent - a.sent).slice(0, 15)
+      .map((a) => ({ email: a.email, count: a.sent }))
+    const topRecipients = addrs.filter((a) => a.received > 0)
+      .sort((a, b) => b.received - a.received).slice(0, 15)
+      .map((a) => ({ email: a.email, count: a.received }))
+
+    const domainTotals = new Map()
+    const domainSent = new Map()
+    for (const a of addrs) {
+      const at = a.email.lastIndexOf('@')
+      if (at < 0) continue
+      const domain = a.email.slice(at + 1)
+      domainTotals.set(domain, (domainTotals.get(domain) || 0) + a.sent + a.received)
+      if (a.sent) domainSent.set(domain, (domainSent.get(domain) || 0) + a.sent)
+    }
+    const topDomains = [...domainTotals.entries()]
+      .sort((a, b) => b[1] - a[1]).slice(0, 15)
+      .map(([domain, count]) => ({ domain, count }))
+    // The mailbox owner most likely sends from the busiest sending domain.
+    const primaryDomain = [...domainSent.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || ''
+    let externalSenders = 0
+    for (const a of addrs) {
+      if (!a.sent) continue
+      const at = a.email.lastIndexOf('@')
+      if (at >= 0 && a.email.slice(at + 1) !== primaryDomain) externalSenders++
+    }
+
+    report.topSenders = topSenders
+    report.topRecipients = topRecipients
+    report.topDomains = topDomains
+    report.primaryDomain = primaryDomain
+    report.externalSenders = externalSenders
+    report.uniqueSenders = addrs.filter((a) => a.sent > 0).length
+    report.uniqueRecipients = addrs.filter((a) => a.received > 0).length
+    report.uniqueDomains = domainTotals.size
+    report.folderList = this.folders.map((f) => ({ name: f.name, path: f.path, category: f.category, messageCount: f.messageCount }))
+    return report
   }
 }
 

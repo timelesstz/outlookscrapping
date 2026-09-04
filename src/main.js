@@ -1,5 +1,5 @@
 import './styles.css'
-import { exportCsv, exportXlsx, exportTxt, exportJson, buildEml, downloadBlob, safeFilename } from './exporters.js'
+import { exportCsv, exportXlsx, exportTxt, exportJson, exportDoc, printHtml, exportXlsxWorkbook, buildEml, downloadBlob, safeFilename } from './exporters.js'
 import { startCyberBackground } from './cyberbg.js'
 import { renderForensicReport, buildForensicHtmlDoc } from './forensic-render.js'
 
@@ -498,13 +498,19 @@ function renderForensicSearch() {
   el.hidden = false
   el.innerHTML = `<div class="fx-searchbox">
     <strong>Keyword search:</strong> “${escapeHtml(q)}” — ${hits.length.toLocaleString()} match(es) in scanned messages
-    ${hits.length ? `<table class="fx-table fx-samples"><thead><tr><th>Date</th><th>From</th><th>Subject</th><th>Folder</th></tr></thead><tbody>${
-      shown.map((m) => `<tr><td class="fx-nowrap">${m.date ? new Date(m.date).toLocaleDateString() : '—'}</td><td class="fx-ellip">${escapeHtml(m.senderEmail || m.senderName)}</td><td>${escapeHtml(m.subject || '(no subject)')}</td><td class="fx-ellip fx-muted">${escapeHtml(m.folderPath)}</td></tr>`).join('')
+    ${hits.length ? `<table class="fx-table fx-samples"><thead><tr><th>Ref</th><th>Date</th><th>From</th><th>Subject</th><th>Folder</th></tr></thead><tbody>${
+      shown.map((m) => `<tr><td><span class="fx-ref fx-ref-link" data-open-msg="${m.id}">${escapeHtml(m.ref || '—')}</span></td><td class="fx-nowrap">${m.date ? new Date(m.date).toLocaleDateString() : '—'}</td><td class="fx-ellip">${escapeHtml(m.senderEmail || m.senderName)}</td><td>${escapeHtml(m.subject || '(no subject)')}</td><td class="fx-ellip fx-muted">${escapeHtml(m.folderPath)}</td></tr>`).join('')
     }</tbody></table>${hits.length > shown.length ? `<p class="fx-muted">Showing first ${shown.length} of ${hits.length.toLocaleString()}.</p>` : ''}` : ''}
   </div>`
 }
 
 $('#forensic-search').addEventListener('input', () => { if (state.forensic) renderForensicSearch() })
+
+// Click a reference (e.g. M000123) to open the source message when retained.
+$('#forensic-report').addEventListener('click', (e) => {
+  const el = e.target.closest('[data-open-msg]')
+  if (el) openViewer(Number(el.dataset.openMsg))
+})
 
 // ---------------------------------------------------------------------------
 // Exports
@@ -545,6 +551,7 @@ const CONTACT_COLUMNS = [
 ]
 
 const COMPLAINT_COLUMNS = [
+  { key: 'ref', label: 'Ref' },
   { key: 'severity', label: 'Severity', format: (c) => c.severity.toUpperCase() },
   { key: 'date', label: 'Date', format: (c) => (c.date ? new Date(c.date).toISOString() : '') },
   { key: 'client', label: 'Client Email' },
@@ -555,6 +562,7 @@ const COMPLAINT_COLUMNS = [
   { key: 'responded', label: 'Replied', format: (c) => (!c.external ? 'n/a' : c.responded ? 'Yes' : 'No') },
   { key: 'folder', label: 'Folder' },
   { key: 'snippet', label: 'Match' },
+  { key: 'messageId', label: 'Message-ID' },
 ]
 
 const AUDIT_COLUMNS = [
@@ -563,10 +571,69 @@ const AUDIT_COLUMNS = [
   { key: 'title', label: 'Finding' },
   { key: 'detail', label: 'Detail / recommendation' },
   { key: 'samples', label: 'Evidence items', format: (f) => (f.samples ? f.samples.length : 0) },
+  { key: 'samples', label: 'Evidence refs', format: (f) => (f.samples || []).map((s) => s.ref).filter(Boolean).join('; ') },
+]
+
+// Flattened category matches (one row per detected message) for the workbook.
+const MATCH_COLUMNS = [
+  { key: 'ref', label: 'Ref' },
+  { key: 'category', label: 'Category' },
+  { key: 'date', label: 'Date', format: (r) => (r.date ? new Date(r.date).toISOString() : '') },
+  { key: 'from', label: 'From' },
+  { key: 'subject', label: 'Subject' },
+  { key: 'term', label: 'Matched term' },
+  { key: 'snippet', label: 'Context' },
+  { key: 'folder', label: 'Folder' },
+  { key: 'messageId', label: 'Message-ID' },
 ]
 
 function exportBase() {
   return safeFilename(state.fileName.replace(/\.(pst|ost)$/i, ''), 'outlook')
+}
+
+// Assemble the forensic report as a multi-sheet Excel workbook. Every detection
+// row carries its reference (Ref + Message-ID) for traceability.
+function buildReportWorkbook() {
+  const f = state.forensic
+  const iso = (d) => (d ? new Date(d).toISOString().slice(0, 10) : '')
+  const summaryRows = [
+    ['File', state.fileName], ['Generated', new Date().toISOString()],
+    ['Deep content scan', f.deepScan ? 'Yes' : 'No'],
+    ['Total messages', f.total], ['Received', f.received], ['Sent', f.sent], ['Drafts', f.drafts],
+    ['With attachments', f.withAttachments], ['Unread', f.unread],
+    ['Unique senders', f.uniqueSenders], ['Unique recipients', f.uniqueRecipients],
+    ['Unique domains', f.uniqueDomains], ['External senders', f.externalSenders],
+    ['Date range', `${iso(f.dateRange.min)} — ${iso(f.dateRange.max)}`],
+    ['Complaints', f.complaints.total], ['Unanswered client complaints', f.complaints.unanswered],
+    ['Audit findings (High/Med/Low)', `${f.audit.counts.high}/${f.audit.counts.medium}/${f.audit.counts.low}`],
+    ['Payment/bank-change requests', f.becTotal], ['Risky attachments', f.riskyAttachmentTotal],
+    ['Sender spoofing mismatches', f.nameMismatchTotal], ['Sensitive-data hits', f.sensitiveTotal],
+  ].map(([k, v]) => ({ k, v }))
+
+  const matches = []
+  for (const cat of Object.values(f.categories)) {
+    for (const s of cat.samples) matches.push({ ...s, category: cat.label })
+  }
+
+  const redflags = []
+  for (const a of f.riskyAttachments) redflags.push({ ref: a.ref, flag: 'Risky attachment', from: a.from, detail: `${a.name} (.${a.ext})`, date: a.date, folder: a.folder, messageId: a.messageId })
+  for (const m of f.nameMismatch) redflags.push({ ref: m.ref, flag: 'Sender name/address mismatch', from: m.senderEmail, detail: m.senderName, date: m.date, folder: m.folder, messageId: m.messageId })
+  for (const s of f.sensitive) redflags.push({ ref: s.ref, flag: `Sensitive data: ${s.type}`, from: s.from, detail: s.subject, date: s.date, folder: s.folder, messageId: s.messageId })
+  for (const b of f.bec) redflags.push({ ref: b.ref, flag: 'Payment/bank-change request', from: b.from, detail: b.subject, date: b.date, folder: b.folder, messageId: b.messageId })
+
+  const REDFLAG_COLUMNS = [
+    { key: 'ref', label: 'Ref' }, { key: 'flag', label: 'Flag' }, { key: 'from', label: 'From' },
+    { key: 'detail', label: 'Detail' }, { key: 'date', label: 'Date', format: (r) => (r.date ? new Date(r.date).toISOString() : '') },
+    { key: 'folder', label: 'Folder' }, { key: 'messageId', label: 'Message-ID' },
+  ]
+
+  return [
+    { name: 'Summary', rows: summaryRows, columns: [{ key: 'k', label: 'Field' }, { key: 'v', label: 'Value' }] },
+    { name: 'Audit Findings', rows: f.audit.findings, columns: AUDIT_COLUMNS },
+    { name: 'Complaints', rows: f.complaints.records, columns: COMPLAINT_COLUMNS },
+    { name: 'Investigation Matches', rows: matches, columns: MATCH_COLUMNS },
+    { name: 'Red Flags', rows: redflags, columns: REDFLAG_COLUMNS },
+  ]
 }
 
 const exporters = {
@@ -585,6 +652,18 @@ const exporters = {
   'forensic-json': () => {
     if (!state.forensic) return
     exportJson(`${exportBase()}-forensic-report.json`, { file: state.fileName, generated: new Date().toISOString(), report: state.forensic })
+  },
+  'forensic-pdf': () => {
+    if (!state.forensic) return
+    printHtml(buildForensicHtmlDoc(state.forensic, state.fileName))
+  },
+  'forensic-word': () => {
+    if (!state.forensic) return
+    exportDoc(`${exportBase()}-forensic-report.doc`, buildForensicHtmlDoc(state.forensic, state.fileName))
+  },
+  'forensic-xlsx': () => {
+    if (!state.forensic) return
+    exportXlsxWorkbook(`${exportBase()}-forensic-report.xlsx`, buildReportWorkbook())
   },
   'complaints-csv': () => {
     if (!state.forensic?.complaints?.records.length) return alert('No complaints detected to export.')

@@ -169,6 +169,7 @@ export class ForensicCollector {
     this.bec = [] // payment/bank-change requests
     this.becTotal = 0
     this.approvals = 0
+    this.refSeq = 0 // running exhibit reference for every scanned message
   }
 
   // Score how serious a complaint looks from its text.
@@ -189,6 +190,11 @@ export class ForensicCollector {
 
   addMessage(m) {
     this.total++
+    // Stable, human-citable reference for this message + its global Message-ID.
+    // Every detection below records `ref`/`messageId` so any finding traces
+    // back to the exact source email.
+    const ref = 'M' + String(++this.refSeq).padStart(6, '0')
+    const messageId = m.messageId || ''
 
     // Folder buckets + sent/received/draft split.
     const cat = m.folderCategory || 'other'
@@ -227,7 +233,7 @@ export class ForensicCollector {
         if (RISKY_EXT.has(ext)) {
           this.riskyAttachmentTotal++
           if (this.riskyAttachments.length < MAX_ATTACH_DETAIL) {
-            this.riskyAttachments.push({ name, ext, from: m.senderEmail || m.senderName, folder: m.folderPath, date: m.date, subject: m.subject })
+            this.riskyAttachments.push({ ref, messageId, name, ext, from: m.senderEmail || m.senderName, folder: m.folderPath, date: m.date, subject: m.subject })
           }
         }
       }
@@ -239,7 +245,7 @@ export class ForensicCollector {
     if (nameAddr && m.senderEmail && domainOf(nameAddr) !== domainOf(m.senderEmail)) {
       this.nameMismatchTotal++
       if (this.nameMismatch.length < MAX_MISMATCH) {
-        this.nameMismatch.push({ senderName: m.senderName, senderEmail: m.senderEmail, subject: m.subject, folder: m.folderPath })
+        this.nameMismatch.push({ ref, messageId, senderName: m.senderName, senderEmail: m.senderEmail, subject: m.subject, folder: m.folderPath, date: m.date })
       }
     }
 
@@ -254,7 +260,7 @@ export class ForensicCollector {
       bucket.count++
       if (bucket.samples.length < MAX_SAMPLES) {
         bucket.samples.push({
-          id: m.id ?? null,
+          id: m.id ?? null, ref, messageId,
           subject, from: m.senderEmail || m.senderName, date: m.date,
           folder: m.folderPath, term: match[0], snippet: snippet(haystack, match.index),
         })
@@ -269,7 +275,7 @@ export class ForensicCollector {
         if (s.luhn && !luhn(mm[0])) continue
         this.sensitiveTotal++
         if (this.sensitive.length < MAX_SENSITIVE) {
-          this.sensitive.push({ type: s.type, from: m.senderEmail || m.senderName, subject, folder: m.folderPath, date: m.date })
+          this.sensitive.push({ ref, messageId, type: s.type, from: m.senderEmail || m.senderName, subject, folder: m.folderPath, date: m.date })
         }
         break
       }
@@ -289,6 +295,7 @@ export class ForensicCollector {
       this.complaintsTotal++
       if (this.complaints.length < MAX_SAMPLES * 5) {
         this.complaints.push({
+          ref, messageId, id: m.id ?? null,
           client: m.senderEmail || '',
           clientName: m.senderName || '',
           date: m.date instanceof Date ? m.date.getTime() : null,
@@ -306,10 +313,12 @@ export class ForensicCollector {
     if (BEC_RE.test(haystack)) {
       this.becTotal++
       if (this.bec.length < MAX_MISMATCH) {
-        this.bec.push({ from: m.senderEmail || m.senderName, subject, folder: m.folderPath, date: m.date, sent: cat === 'sent' })
+        this.bec.push({ ref, messageId, from: m.senderEmail || m.senderName, subject, folder: m.folderPath, date: m.date, sent: cat === 'sent' })
       }
     }
     if (APPROVAL_RE.test(haystack)) this.approvals++
+
+    return ref
   }
 
   finalize(opts = {}) {
@@ -395,20 +404,20 @@ export class ForensicCollector {
         `${complaints.unanswered} client complaint(s) with no reply on record`,
         'Incoming complaints from external clients with no matching outbound response — potential SLA breach or unresolved dispute.',
         complaints.records.filter((r) => r.external && !r.responded).slice(0, 10)
-          .map((r) => ({ from: r.client || r.clientName, subject: r.subject, date: r.date, folder: r.folder })))
+          .map((r) => ({ ref: r.ref, messageId: r.messageId, from: r.client || r.clientName, subject: r.subject, date: r.date, folder: r.folder })))
     }
     if (this.becTotal > 0) {
       const ext = this.bec.filter((b) => !b.sent)
       add('high', 'Fraud / BEC',
         `${this.becTotal} payment or bank-detail change request(s)`,
         'Messages asking to change bank/payment details are a common business-email-compromise vector — verify each out-of-band before acting.',
-        (ext.length ? ext : this.bec).slice(0, 10).map((b) => ({ from: b.from, subject: b.subject, date: b.date, folder: b.folder })))
+        (ext.length ? ext : this.bec).slice(0, 10).map((b) => ({ ref: b.ref, messageId: b.messageId, from: b.from, subject: b.subject, date: b.date, folder: b.folder })))
     }
     if (this.nameMismatchTotal > 0) {
       add('high', 'Spoofing',
         `${this.nameMismatchTotal} sender name/address mismatch(es)`,
         'Display name embeds a different email domain than the actual sender — a spoofing / impersonation signal.',
-        this.nameMismatch.slice(0, 10).map((m) => ({ from: m.senderEmail, subject: m.subject, folder: m.folder })))
+        this.nameMismatch.slice(0, 10).map((m) => ({ ref: m.ref, messageId: m.messageId, from: m.senderEmail, subject: m.subject, date: m.date, folder: m.folder })))
     }
     if (this.sensitiveTotal > 0) {
       add('high', 'Data protection',
@@ -420,13 +429,13 @@ export class ForensicCollector {
       add('medium', 'Security',
         `${this.riskyAttachmentTotal} risky attachment(s)`,
         'Executable, script, macro or archive attachments warrant a malware/handling review.',
-        this.riskyAttachments.slice(0, 10).map((a) => ({ from: a.from, subject: a.name, date: a.date, folder: a.folder })))
+        this.riskyAttachments.slice(0, 10).map((a) => ({ ref: a.ref, messageId: a.messageId, from: a.from, subject: a.name, date: a.date, folder: a.folder })))
     }
     if (this.categories.financial?.count > 0) {
       add('medium', 'Financial',
         `${this.categories.financial.count} financial message(s)`,
         'Invoices, payments and transfers referenced — sample for approval evidence and reconciliation.',
-        (this.categories.financial.samples || []).slice(0, 10).map((s) => ({ from: s.from, subject: s.subject, date: s.date, folder: s.folder })))
+        (this.categories.financial.samples || []).slice(0, 10).map((s) => ({ ref: s.ref, messageId: s.messageId, from: s.from, subject: s.subject, date: s.date, folder: s.folder })))
     }
     if (this.folders.deleted > 0) {
       add('medium', 'Retention',

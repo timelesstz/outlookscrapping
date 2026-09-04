@@ -88,13 +88,14 @@ function categorySamples(cat) {
   if (!cat.count) return `<p class="fx-muted">No matches.</p>`
   const rows = cat.samples.map((s) => `
     <tr>
+      ${refCell(s)}
       <td class="fx-nowrap">${esc(fmtDay(s.date))}</td>
       <td class="fx-ellip">${esc(s.from)}</td>
       <td>${esc(s.subject || '(no subject)')}<div class="fx-snip">…matched “${esc(s.term)}”: ${esc(s.snippet)}</div></td>
       <td class="fx-ellip fx-muted">${esc(s.folder)}</td>
     </tr>`).join('')
   const more = cat.count > cat.samples.length ? `<p class="fx-muted">Showing ${n(cat.samples.length)} of ${n(cat.count)} matches.</p>` : ''
-  return `<table class="fx-table fx-samples"><thead><tr><th>Date</th><th>From</th><th>Subject / match</th><th>Folder</th></tr></thead><tbody>${rows}</tbody></table>${more}`
+  return `<table class="fx-table fx-samples"><thead><tr><th>Ref</th><th>Date</th><th>From</th><th>Subject / match</th><th>Folder</th></tr></thead><tbody>${rows}</tbody></table>${more}`
 }
 
 function investigation(r) {
@@ -111,15 +112,15 @@ function flags(r) {
   const blocks = []
   if (r.riskyAttachmentTotal > 0) {
     blocks.push(`<details class="fx-cat fx-cat-hit" open><summary>⚠ Risky attachments <span class="fx-badge">${n(r.riskyAttachmentTotal)}</span></summary>
-      <table class="fx-table fx-samples"><thead><tr><th>File</th><th>Type</th><th>From</th><th>Folder</th></tr></thead><tbody>${r.riskyAttachments.map((a) => `<tr><td class="fx-ellip">${esc(a.name)}</td><td>.${esc(a.ext)}</td><td class="fx-ellip">${esc(a.from)}</td><td class="fx-ellip fx-muted">${esc(a.folder)}</td></tr>`).join('')}</tbody></table></details>`)
+      <table class="fx-table fx-samples"><thead><tr><th>Ref</th><th>File</th><th>Type</th><th>From</th><th>Folder</th></tr></thead><tbody>${r.riskyAttachments.map((a) => `<tr>${refCell(a)}<td class="fx-ellip">${esc(a.name)}</td><td>.${esc(a.ext)}</td><td class="fx-ellip">${esc(a.from)}</td><td class="fx-ellip fx-muted">${esc(a.folder)}</td></tr>`).join('')}</tbody></table></details>`)
   }
   if (r.nameMismatchTotal > 0) {
     blocks.push(`<details class="fx-cat fx-cat-hit"><summary>⚠ Sender name / address mismatch <span class="fx-badge">${n(r.nameMismatchTotal)}</span></summary>
-      <table class="fx-table fx-samples"><thead><tr><th>Display name</th><th>Actual address</th><th>Subject</th></tr></thead><tbody>${r.nameMismatch.map((m) => `<tr><td class="fx-ellip">${esc(m.senderName)}</td><td class="fx-ellip">${esc(m.senderEmail)}</td><td class="fx-ellip">${esc(m.subject)}</td></tr>`).join('')}</tbody></table></details>`)
+      <table class="fx-table fx-samples"><thead><tr><th>Ref</th><th>Display name</th><th>Actual address</th><th>Subject</th></tr></thead><tbody>${r.nameMismatch.map((m) => `<tr>${refCell(m)}<td class="fx-ellip">${esc(m.senderName)}</td><td class="fx-ellip">${esc(m.senderEmail)}</td><td class="fx-ellip">${esc(m.subject)}</td></tr>`).join('')}</tbody></table></details>`)
   }
   if (r.sensitiveTotal > 0) {
     blocks.push(`<details class="fx-cat fx-cat-hit"><summary>⚠ Possible sensitive data <span class="fx-badge">${n(r.sensitiveTotal)}</span></summary>
-      <table class="fx-table fx-samples"><thead><tr><th>Type</th><th>From</th><th>Subject</th><th>Folder</th></tr></thead><tbody>${r.sensitive.map((s) => `<tr><td>${esc(s.type)}</td><td class="fx-ellip">${esc(s.from)}</td><td class="fx-ellip">${esc(s.subject)}</td><td class="fx-ellip fx-muted">${esc(s.folder)}</td></tr>`).join('')}</tbody></table></details>`)
+      <table class="fx-table fx-samples"><thead><tr><th>Ref</th><th>Type</th><th>From</th><th>Subject</th><th>Folder</th></tr></thead><tbody>${r.sensitive.map((s) => `<tr>${refCell(s)}<td>${esc(s.type)}</td><td class="fx-ellip">${esc(s.from)}</td><td class="fx-ellip">${esc(s.subject)}</td><td class="fx-ellip fx-muted">${esc(s.folder)}</td></tr>`).join('')}</tbody></table></details>`)
   }
   const exts = Object.entries(r.attachmentTypes).sort((a, b) => b[1] - a[1])
   if (exts.length) {
@@ -131,6 +132,15 @@ function flags(r) {
 
 const sevBadge = (s) => `<span class="fx-sev fx-sev-${esc(s)}">${esc(String(s).toUpperCase())}</span>`
 
+// A reference cell: exhibit id, Message-ID as tooltip, clickable to open the
+// source message when it was retained.
+const refCell = (x) => {
+  const rf = esc(x && x.ref ? x.ref : '—')
+  const title = x && x.messageId ? ` title="Message-ID: ${esc(x.messageId)}"` : ''
+  if (x && x.id != null) return `<td><span class="fx-ref fx-ref-link" data-open-msg="${x.id}"${title}>${rf}</span></td>`
+  return `<td><span class="fx-ref"${title}>${rf}</span></td>`
+}
+
 function auditSection(r) {
   const a = r.audit
   if (!a) return ''
@@ -141,8 +151,8 @@ function auditSection(r) {
     <div class="fx-finding fx-sevborder-${esc(f.severity)}">
       <div class="fx-finding-head">${sevBadge(f.severity)} <strong>${esc(f.title)}</strong> <span class="fx-muted">· ${esc(f.category)}</span></div>
       <p class="fx-finding-detail">${esc(f.detail)}</p>
-      ${f.samples && f.samples.length ? `<table class="fx-table fx-samples"><thead><tr><th>Date</th><th>From</th><th>Subject</th><th>Folder</th></tr></thead><tbody>${
-        f.samples.map((s) => `<tr><td class="fx-nowrap">${esc(fmtDay(s.date))}</td><td class="fx-ellip">${esc(s.from)}</td><td>${esc(s.subject || '')}</td><td class="fx-ellip fx-muted">${esc(s.folder)}</td></tr>`).join('')
+      ${f.samples && f.samples.length ? `<table class="fx-table fx-samples"><thead><tr><th>Ref</th><th>Date</th><th>From</th><th>Subject</th><th>Folder</th></tr></thead><tbody>${
+        f.samples.map((s) => `<tr>${refCell(s)}<td class="fx-nowrap">${esc(fmtDay(s.date))}</td><td class="fx-ellip">${esc(s.from)}</td><td>${esc(s.subject || '')}</td><td class="fx-ellip fx-muted">${esc(s.folder)}</td></tr>`).join('')
       }</tbody></table>` : ''}
     </div>`).join('')
   return `<section class="fx-section"><h3>Audit findings</h3>${summary}${cards}</section>`
@@ -159,6 +169,7 @@ function complaintsSection(r) {
       ? '<span class="fx-muted">internal</span>'
       : (c.responded ? '<span class="fx-ok">answered</span>' : '<span class="fx-bad-text">no reply</span>')
     return `<tr>
+      ${refCell(c)}
       <td>${sevBadge(c.severity)}</td>
       <td class="fx-nowrap">${esc(fmtDay(c.date))}</td>
       <td class="fx-ellip">${esc(c.client || c.clientName || '(unknown)')}</td>
@@ -169,7 +180,7 @@ function complaintsSection(r) {
   const more = cp.records.length > 300 ? `<p class="fx-muted">Showing 300 of ${n(cp.records.length)} complaints (all are in the export).</p>` : ''
   const summary = `<p class="fx-line"><strong>${n(cp.total)}</strong> complaint message(s) · <strong>${n(cp.uniqueClients)}</strong> client(s) · <strong class="fx-bad-text">${n(cp.unanswered)}</strong> unanswered from external clients · severity ${sevBadge('high')} ${n(cp.bySeverity.high)} ${sevBadge('medium')} ${n(cp.bySeverity.medium)} ${sevBadge('low')} ${n(cp.bySeverity.low)}</p><p class="fx-line">${tagChips}</p>`
   return `<section class="fx-section"><h3>Client complaints</h3>${summary}
-    <table class="fx-table fx-samples"><thead><tr><th>Severity</th><th>Date</th><th>Client</th><th>Subject / detail</th><th>Reply</th></tr></thead><tbody>${rows}</tbody></table>${more}</section>`
+    <table class="fx-table fx-samples"><thead><tr><th>Ref</th><th>Severity</th><th>Date</th><th>Client</th><th>Subject / detail</th><th>Reply</th></tr></thead><tbody>${rows}</tbody></table>${more}</section>`
 }
 
 /** Report body HTML (no outer page chrome) — for the in-app tab and the export. */
@@ -255,6 +266,7 @@ export function buildForensicHtmlDoc(r, fileName) {
   .fx-finding-head { margin-bottom: 0.2rem; } .fx-finding-detail { margin: 0.15rem 0 0.4rem; color: #444; font-size: 0.88rem; }
   .fx-chip { display: inline-block; background: #eee; border-radius: 999px; padding: 0 0.5rem; font-size: 0.72rem; color: #444; }
   .fx-tags { margin-top: 0.2rem; } .fx-ok { color: #1a7f4b; font-weight: 600; } .fx-bad-text { color: #c2102e; font-weight: 600; }
+  .fx-ref { font-family: 'Consolas', monospace; font-size: 0.76rem; color: #555; white-space: nowrap; }
   @media print { .fx-cat, .fx-finding { break-inside: avoid; } details { display: block; } details:not([open]) > *:not(summary) { display: revert; } }
 </style></head><body>
   <h1>🔍 Forensic Report</h1>

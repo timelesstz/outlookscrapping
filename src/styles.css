@@ -443,6 +443,9 @@ td.ellipsis { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white
 .fx-tags { margin-top: 0.25rem; }
 .fx-ok { color: var(--green); font-weight: 600; }
 .fx-bad-text { color: var(--red); font-weight: 600; }
+.fx-ref { font-family: 'Consolas', ui-monospace, monospace; font-size: 0.76rem; color: var(--muted); white-space: nowrap; }
+.fx-ref-link { color: var(--red); cursor: pointer; text-decoration: underline dotted; }
+.fx-ref-link:hover { color: #fff; }
 
 footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 1.25rem 1rem; font-family: 'Consolas', ui-monospace, monospace; }
 footer p { margin: 0.2rem 0; }

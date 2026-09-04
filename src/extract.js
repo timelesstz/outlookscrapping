@@ -273,11 +273,13 @@ export class PstSession {
 
     // Feed the forensic collector for EVERY message (all folders), regardless
     // of the retention cap — the report must reflect the whole mailbox.
+    let ref = null
     if (this.#forensic) {
-      this.#forensic.addMessage({
+      ref = this.#forensic.addMessage({
         id: willRetain ? this.messages.length : null,
         subject, senderName, senderEmail, date, folderPath, folderCategory,
         hasAttachments, isRead,
+        messageId: safeGet(() => msg.internetMessageId) || '',
         recipientEmails: recipients.map((r) => r.email).filter(Boolean),
         attachmentNames: hasAttachments ? this.#attachmentNames(msg) : [],
         bodyText: this.#scope.deepScan ? this.#messageText(msg) : '',
@@ -297,6 +299,7 @@ export class PstSession {
     const id = this.messages.length
     this.messages.push({
       id,
+      ref, // forensic exhibit reference (null when forensic scan is off)
       folderId,
       folderPath,
       date,

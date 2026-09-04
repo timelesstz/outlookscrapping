@@ -6,8 +6,8 @@
   <title>Timeless Outlook Extractor</title>
   <meta name="description" content="Extract email addresses, messages, and contacts from Outlook PST/OST files — entirely in your browser. No installation, no upload to any server." />
   <link rel="icon" href="data:image/svg+xml,&lt;svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'&gt;&lt;text y='80' font-size='80'&gt;🛡️&lt;/text&gt;&lt;/svg&gt;" />
-  <script type="module" crossorigin src="./assets/index-PQ8N_7th.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-DCz9tRNp.css">
+  <script type="module" crossorigin src="./assets/index-BoUCsD4Q.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-CVBO6ch4.css">
 </head>
 <body>
   <canvas id="cyber-bg" aria-hidden="true"></canvas>
@@ -141,9 +141,15 @@
         <div class="toolbar">
           <input type="search" id="forensic-search" placeholder="Search subjects & participants for a keyword…" />
           <span class="spacer"></span>
-          <span class="export-label">Export report:</span>
+          <span class="export-label">Report:</span>
           <button class="btn" data-export="forensic-html">HTML</button>
           <button class="btn" data-export="forensic-json">JSON</button>
+          <span class="export-label">Complaints:</span>
+          <button class="btn" data-export="complaints-csv">CSV</button>
+          <button class="btn" data-export="complaints-xlsx">Excel</button>
+          <span class="export-label">Audit:</span>
+          <button class="btn" data-export="audit-csv">CSV</button>
+          <button class="btn" data-export="audit-xlsx">Excel</button>
         </div>
         <div id="forensic-report"></div>
       </div>

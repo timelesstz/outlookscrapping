@@ -1,6 +1,7 @@
 import './styles.css'
 import { exportCsv, exportXlsx, exportTxt, exportJson, buildEml, downloadBlob, safeFilename } from './exporters.js'
 import { startCyberBackground } from './cyberbg.js'
+import { renderForensicReport, buildForensicHtmlDoc } from './forensic-render.js'
 
 const $ = (sel) => document.querySelector(sel)
 
@@ -109,9 +110,11 @@ async function loadFile(file) {
     addresses: $('#scope-addresses').checked,
     messages: $('#scope-messages').checked,
     contacts: $('#scope-contacts').checked,
+    forensic: $('#scope-forensic').checked,
+    deepScan: $('#scope-deepscan').checked,
   }
-  if (!scope.addresses && !scope.messages && !scope.contacts) {
-    showUploadError('Select at least one thing to extract (addresses, messages, or contacts).')
+  if (!scope.addresses && !scope.messages && !scope.contacts && !scope.forensic) {
+    showUploadError('Select at least one thing to extract (addresses, messages, contacts, or forensic report).')
     return
   }
   state.scope = scope
@@ -180,6 +183,7 @@ function onParsed(data) {
   state.messages = data.messages
   state.contacts = data.contacts
   state.addresses = data.addresses
+  state.forensic = data.forensic || null
   state.totalMessages = data.totalMessages ?? data.messages.length
   state.messagesTruncated = !!data.messagesTruncated
   state.selectedFolderId = null
@@ -201,6 +205,7 @@ function onParsed(data) {
   $('#count-messages').textContent = state.totalMessages.toLocaleString()
   $('#count-contacts').textContent = state.contacts.length.toLocaleString()
   applyScopeToTabs(scope)
+  if (scope.forensic && state.forensic) renderForensic()
 
   const banner = $('#messages-truncated')
   if (banner) {
@@ -467,6 +472,41 @@ function renderContacts() {
 $('#contact-search').addEventListener('input', renderContacts)
 
 // ---------------------------------------------------------------------------
+// Forensic report tab
+// ---------------------------------------------------------------------------
+function renderForensic() {
+  const container = $('#forensic-report')
+  if (!container || !state.forensic) return
+  container.innerHTML = `<div id="forensic-search-results" hidden></div>` + renderForensicReport(state.forensic)
+  renderForensicSearch()
+}
+
+function renderForensicSearch() {
+  const el = $('#forensic-search-results')
+  if (!el) return
+  const q = $('#forensic-search').value.trim().toLowerCase()
+  if (!q) { el.hidden = true; el.innerHTML = ''; return }
+  if (!state.messages.length) {
+    el.hidden = false
+    el.innerHTML = `<div class="fx-searchbox"><strong>Keyword search</strong> needs the message list — re-run with <em>Messages</em> also ticked. The investigation categories below still cover subjects${state.forensic.deepScan ? ' and bodies' : ''}.</div>`
+    return
+  }
+  const hits = state.messages.filter((m) =>
+    `${m.subject} ${m.senderName} ${m.senderEmail} ${m.to} ${m.cc} ${m.folderPath}`.toLowerCase().includes(q)
+  )
+  const shown = hits.slice(0, 200)
+  el.hidden = false
+  el.innerHTML = `<div class="fx-searchbox">
+    <strong>Keyword search:</strong> “${escapeHtml(q)}” — ${hits.length.toLocaleString()} match(es) in scanned messages
+    ${hits.length ? `<table class="fx-table fx-samples"><thead><tr><th>Date</th><th>From</th><th>Subject</th><th>Folder</th></tr></thead><tbody>${
+      shown.map((m) => `<tr><td class="fx-nowrap">${m.date ? new Date(m.date).toLocaleDateString() : '—'}</td><td class="fx-ellip">${escapeHtml(m.senderEmail || m.senderName)}</td><td>${escapeHtml(m.subject || '(no subject)')}</td><td class="fx-ellip fx-muted">${escapeHtml(m.folderPath)}</td></tr>`).join('')
+    }</tbody></table>${hits.length > shown.length ? `<p class="fx-muted">Showing first ${shown.length} of ${hits.length.toLocaleString()}.</p>` : ''}` : ''}
+  </div>`
+}
+
+$('#forensic-search').addEventListener('input', () => { if (state.forensic) renderForensicSearch() })
+
+// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 const ADDRESS_COLUMNS = [
@@ -517,6 +557,14 @@ const exporters = {
   'messages-json': exportMessagesJson,
   'contacts-csv': () => exportCsv(`${exportBase()}-contacts.csv`, filteredContacts(), CONTACT_COLUMNS),
   'contacts-xlsx': () => exportXlsx(`${exportBase()}-contacts.xlsx`, filteredContacts(), CONTACT_COLUMNS, 'Contacts'),
+  'forensic-html': () => {
+    if (!state.forensic) return
+    downloadBlob(`${exportBase()}-forensic-report.html`, 'text/html;charset=utf-8', buildForensicHtmlDoc(state.forensic, state.fileName))
+  },
+  'forensic-json': () => {
+    if (!state.forensic) return
+    exportJson(`${exportBase()}-forensic-report.json`, { file: state.fileName, generated: new Date().toISOString(), report: state.forensic })
+  },
 }
 
 document.querySelectorAll('[data-export]').forEach((btn) => {

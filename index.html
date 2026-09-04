@@ -44,7 +44,9 @@
         <label class="scope-opt"><input type="checkbox" id="scope-addresses" checked /><span>Email addresses</span></label>
         <label class="scope-opt"><input type="checkbox" id="scope-messages" checked /><span>Messages</span></label>
         <label class="scope-opt"><input type="checkbox" id="scope-contacts" checked /><span>Contacts</span></label>
-        <p class="scope-hint">Pick only what you need — fewer categories load faster and use far less memory on large files.</p>
+        <label class="scope-opt"><input type="checkbox" id="scope-forensic" /><span>🔍 Forensic report</span></label>
+        <label class="scope-opt scope-sub"><input type="checkbox" id="scope-deepscan" /><span>Deep content scan (reads bodies — slower)</span></label>
+        <p class="scope-hint">Pick only what you need — fewer categories load faster and use far less memory on large files. The forensic report scans every folder (Inbox, Sent, Drafts, Deleted…) and flags complaints, legal/financial/security signals, risky attachments and anomalies. Deep scan also searches message bodies.</p>
       </fieldset>
       <div id="parse-status" hidden>
         <div class="spinner"></div>
@@ -68,6 +70,7 @@
         <button class="tab active" data-tab="addresses" role="tab">Email Addresses <span id="count-addresses" class="count"></span></button>
         <button class="tab" data-tab="messages" role="tab">Messages <span id="count-messages" class="count"></span></button>
         <button class="tab" data-tab="contacts" role="tab">Contacts <span id="count-contacts" class="count"></span></button>
+        <button class="tab" data-tab="forensic" role="tab" hidden>🔍 Forensic Report</button>
       </nav>
 
       <!-- Addresses tab -->
@@ -129,6 +132,18 @@
             <tbody></tbody>
           </table>
         </div>
+      </div>
+
+      <!-- Forensic report tab -->
+      <div id="tab-forensic" class="tab-panel" hidden>
+        <div class="toolbar">
+          <input type="search" id="forensic-search" placeholder="Search subjects & participants for a keyword…" />
+          <span class="spacer"></span>
+          <span class="export-label">Export report:</span>
+          <button class="btn" data-export="forensic-html">HTML</button>
+          <button class="btn" data-export="forensic-json">JSON</button>
+        </div>
+        <div id="forensic-report"></div>
       </div>
     </section>
   </main>

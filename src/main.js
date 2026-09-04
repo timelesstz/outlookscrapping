@@ -544,6 +544,27 @@ const CONTACT_COLUMNS = [
   { key: 'jobTitle', label: 'Job Title' },
 ]
 
+const COMPLAINT_COLUMNS = [
+  { key: 'severity', label: 'Severity', format: (c) => c.severity.toUpperCase() },
+  { key: 'date', label: 'Date', format: (c) => (c.date ? new Date(c.date).toISOString() : '') },
+  { key: 'client', label: 'Client Email' },
+  { key: 'clientName', label: 'Client Name' },
+  { key: 'subject', label: 'Subject' },
+  { key: 'tags', label: 'Type', format: (c) => c.tags.join('; ') },
+  { key: 'external', label: 'External Client', format: (c) => (c.external ? 'Yes' : 'No') },
+  { key: 'responded', label: 'Replied', format: (c) => (!c.external ? 'n/a' : c.responded ? 'Yes' : 'No') },
+  { key: 'folder', label: 'Folder' },
+  { key: 'snippet', label: 'Match' },
+]
+
+const AUDIT_COLUMNS = [
+  { key: 'severity', label: 'Severity', format: (f) => f.severity.toUpperCase() },
+  { key: 'category', label: 'Category' },
+  { key: 'title', label: 'Finding' },
+  { key: 'detail', label: 'Detail / recommendation' },
+  { key: 'samples', label: 'Evidence items', format: (f) => (f.samples ? f.samples.length : 0) },
+]
+
 function exportBase() {
   return safeFilename(state.fileName.replace(/\.(pst|ost)$/i, ''), 'outlook')
 }
@@ -564,6 +585,22 @@ const exporters = {
   'forensic-json': () => {
     if (!state.forensic) return
     exportJson(`${exportBase()}-forensic-report.json`, { file: state.fileName, generated: new Date().toISOString(), report: state.forensic })
+  },
+  'complaints-csv': () => {
+    if (!state.forensic?.complaints?.records.length) return alert('No complaints detected to export.')
+    exportCsv(`${exportBase()}-complaints.csv`, state.forensic.complaints.records, COMPLAINT_COLUMNS)
+  },
+  'complaints-xlsx': () => {
+    if (!state.forensic?.complaints?.records.length) return alert('No complaints detected to export.')
+    exportXlsx(`${exportBase()}-complaints.xlsx`, state.forensic.complaints.records, COMPLAINT_COLUMNS, 'Complaints')
+  },
+  'audit-csv': () => {
+    if (!state.forensic?.audit?.findings.length) return alert('No audit findings to export.')
+    exportCsv(`${exportBase()}-audit-findings.csv`, state.forensic.audit.findings, AUDIT_COLUMNS)
+  },
+  'audit-xlsx': () => {
+    if (!state.forensic?.audit?.findings.length) return alert('No audit findings to export.')
+    exportXlsx(`${exportBase()}-audit-findings.xlsx`, state.forensic.audit.findings, AUDIT_COLUMNS, 'Audit Findings')
   },
 }
 

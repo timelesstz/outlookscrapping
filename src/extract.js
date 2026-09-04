@@ -278,6 +278,7 @@ export class PstSession {
         id: willRetain ? this.messages.length : null,
         subject, senderName, senderEmail, date, folderPath, folderCategory,
         hasAttachments, isRead,
+        recipientEmails: recipients.map((r) => r.email).filter(Boolean),
         attachmentNames: hasAttachments ? this.#attachmentNames(msg) : [],
         bodyText: this.#scope.deepScan ? this.#messageText(msg) : '',
       })
@@ -405,7 +406,6 @@ export class PstSession {
   // Merge the collector's report with top-party/domain stats derived from the
   // address map (which already tallies per-address sent/received counts).
   #finalizeForensic() {
-    const report = this.#forensic.finalize()
     const addrs = [...this.#addressMap.values()]
 
     const topSenders = addrs.filter((a) => a.sent > 0)
@@ -429,6 +429,11 @@ export class PstSession {
       .map(([domain, count]) => ({ domain, count }))
     // The mailbox owner most likely sends from the busiest sending domain.
     const primaryDomain = [...domainSent.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || ''
+
+    // Now the collector can classify complaints (client = external) and
+    // match complaints against outbound replies.
+    const report = this.#forensic.finalize({ primaryDomain })
+
     let externalSenders = 0
     for (const a of addrs) {
       if (!a.sent) continue

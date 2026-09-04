@@ -129,6 +129,49 @@ function flags(r) {
   return blocks.join('') || '<p class="fx-muted">No flags raised.</p>'
 }
 
+const sevBadge = (s) => `<span class="fx-sev fx-sev-${esc(s)}">${esc(String(s).toUpperCase())}</span>`
+
+function auditSection(r) {
+  const a = r.audit
+  if (!a) return ''
+  const c = a.counts
+  const summary = `<p class="fx-line"><strong>${n(a.findings.length)}</strong> finding(s): ${sevBadge('high')} ${n(c.high)} &nbsp; ${sevBadge('medium')} ${n(c.medium)} &nbsp; ${sevBadge('low')} ${n(c.low)}</p>`
+  if (!a.findings.length) return `<section class="fx-section"><h3>Audit findings</h3><p class="fx-muted">No audit findings were raised.</p></section>`
+  const cards = a.findings.map((f) => `
+    <div class="fx-finding fx-sevborder-${esc(f.severity)}">
+      <div class="fx-finding-head">${sevBadge(f.severity)} <strong>${esc(f.title)}</strong> <span class="fx-muted">· ${esc(f.category)}</span></div>
+      <p class="fx-finding-detail">${esc(f.detail)}</p>
+      ${f.samples && f.samples.length ? `<table class="fx-table fx-samples"><thead><tr><th>Date</th><th>From</th><th>Subject</th><th>Folder</th></tr></thead><tbody>${
+        f.samples.map((s) => `<tr><td class="fx-nowrap">${esc(fmtDay(s.date))}</td><td class="fx-ellip">${esc(s.from)}</td><td>${esc(s.subject || '')}</td><td class="fx-ellip fx-muted">${esc(s.folder)}</td></tr>`).join('')
+      }</tbody></table>` : ''}
+    </div>`).join('')
+  return `<section class="fx-section"><h3>Audit findings</h3>${summary}${cards}</section>`
+}
+
+function complaintsSection(r) {
+  const cp = r.complaints
+  if (!cp) return ''
+  if (!cp.total) return `<section class="fx-section"><h3>Client complaints</h3><p class="fx-muted">No complaint-type messages detected${r.deepScan ? '' : ' in subjects (enable Deep content scan to also search bodies)'}.</p></section>`
+  const tagChips = Object.entries(cp.byTag).sort((a, b) => b[1] - a[1])
+    .map(([t, c]) => `<span class="fx-chip">${esc(t)} ${n(c)}</span>`).join(' ')
+  const rows = cp.records.slice(0, 300).map((c) => {
+    const status = !c.external
+      ? '<span class="fx-muted">internal</span>'
+      : (c.responded ? '<span class="fx-ok">answered</span>' : '<span class="fx-bad-text">no reply</span>')
+    return `<tr>
+      <td>${sevBadge(c.severity)}</td>
+      <td class="fx-nowrap">${esc(fmtDay(c.date))}</td>
+      <td class="fx-ellip">${esc(c.client || c.clientName || '(unknown)')}</td>
+      <td>${esc(c.subject || '(no subject)')}<div class="fx-snip">${esc(c.snippet)}</div><div class="fx-tags">${c.tags.map((t) => `<span class="fx-chip">${esc(t)}</span>`).join(' ')}</div></td>
+      <td>${status}</td>
+    </tr>`
+  }).join('')
+  const more = cp.records.length > 300 ? `<p class="fx-muted">Showing 300 of ${n(cp.records.length)} complaints (all are in the export).</p>` : ''
+  const summary = `<p class="fx-line"><strong>${n(cp.total)}</strong> complaint message(s) · <strong>${n(cp.uniqueClients)}</strong> client(s) · <strong class="fx-bad-text">${n(cp.unanswered)}</strong> unanswered from external clients · severity ${sevBadge('high')} ${n(cp.bySeverity.high)} ${sevBadge('medium')} ${n(cp.bySeverity.medium)} ${sevBadge('low')} ${n(cp.bySeverity.low)}</p><p class="fx-line">${tagChips}</p>`
+  return `<section class="fx-section"><h3>Client complaints</h3>${summary}
+    <table class="fx-table fx-samples"><thead><tr><th>Severity</th><th>Date</th><th>Client</th><th>Subject / detail</th><th>Reply</th></tr></thead><tbody>${rows}</tbody></table>${more}</section>`
+}
+
 /** Report body HTML (no outer page chrome) — for the in-app tab and the export. */
 export function renderForensicReport(r) {
   const { good, bad } = assess(r)
@@ -144,6 +187,10 @@ export function renderForensicReport(r) {
           <ul>${bad.map((b) => `<li>${esc(b)}</li>`).join('') || '<li>Nothing flagged.</li>'}</ul>
         </div>
       </div>
+
+      ${auditSection(r)}
+
+      ${complaintsSection(r)}
 
       <section class="fx-section"><h3>Overview</h3>${statGrid(r)}</section>
 
@@ -201,7 +248,14 @@ export function buildForensicHtmlDoc(r, fileName) {
   .fx-cat summary { cursor: pointer; font-weight: 600; }
   .fx-badge { display: inline-block; background: #c2102e; color: #fff; border-radius: 999px; padding: 0 0.5rem; font-size: 0.78rem; margin-left: 0.35rem; }
   .fx-cat-none .fx-badge { background: #9aa; }
-  @media print { .fx-cat { break-inside: avoid; } details { display: block; } details:not([open]) > *:not(summary) { display: revert; } }
+  .fx-sev { display: inline-block; border-radius: 4px; padding: 0 0.4rem; font-size: 0.7rem; font-weight: 700; color: #fff; }
+  .fx-sev-high { background: #c2102e; } .fx-sev-medium { background: #d97706; } .fx-sev-low { background: #6b7280; }
+  .fx-finding { border: 1px solid #e3e3e8; border-left: 4px solid #ccc; border-radius: 6px; padding: 0.6rem 0.85rem; margin: 0.5rem 0; }
+  .fx-sevborder-high { border-left-color: #c2102e; } .fx-sevborder-medium { border-left-color: #d97706; } .fx-sevborder-low { border-left-color: #6b7280; }
+  .fx-finding-head { margin-bottom: 0.2rem; } .fx-finding-detail { margin: 0.15rem 0 0.4rem; color: #444; font-size: 0.88rem; }
+  .fx-chip { display: inline-block; background: #eee; border-radius: 999px; padding: 0 0.5rem; font-size: 0.72rem; color: #444; }
+  .fx-tags { margin-top: 0.2rem; } .fx-ok { color: #1a7f4b; font-weight: 600; } .fx-bad-text { color: #c2102e; font-weight: 600; }
+  @media print { .fx-cat, .fx-finding { break-inside: avoid; } details { display: block; } details:not([open]) > *:not(summary) { display: revert; } }
 </style></head><body>
   <h1>🔍 Forensic Report</h1>
   <p class="fx-sub"><strong>${esc(fileName)}</strong> · generated ${esc(new Date().toLocaleString())} · Timeless Outlook Extractor</p>

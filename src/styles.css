@@ -428,6 +428,21 @@ td.ellipsis { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white
 .fx-samples { margin-top: 0.5rem; display: block; overflow-x: auto; }
 .fx-searchbox { border: 1px solid var(--amber); background: rgba(255, 176, 45, 0.06); border-radius: var(--radius); padding: 0.75rem 1rem; margin-bottom: 1rem; }
 .fx-searchbox strong { color: var(--amber); }
+/* Severity badges + audit findings + complaints */
+.fx-sev { display: inline-block; border-radius: 4px; padding: 0 0.4rem; font-size: 0.7rem; font-weight: 700; color: #11000a; }
+.fx-sev-high { background: var(--red); color: #fff; }
+.fx-sev-medium { background: var(--amber); }
+.fx-sev-low { background: #6b7280; color: #fff; }
+.fx-finding { border: 1px solid var(--border-red); border-left: 4px solid var(--muted); border-radius: var(--radius); padding: 0.6rem 0.85rem; margin: 0.5rem 0; background: var(--panel); }
+.fx-sevborder-high { border-left-color: var(--red); }
+.fx-sevborder-medium { border-left-color: var(--amber); }
+.fx-sevborder-low { border-left-color: #6b7280; }
+.fx-finding-head { margin-bottom: 0.2rem; }
+.fx-finding-detail { margin: 0.15rem 0 0.4rem; color: var(--muted); font-size: 0.88rem; }
+.fx-chip { display: inline-block; background: var(--panel-2); border: 1px solid var(--border-red); border-radius: 999px; padding: 0 0.5rem; font-size: 0.72rem; color: var(--text); }
+.fx-tags { margin-top: 0.25rem; }
+.fx-ok { color: var(--green); font-weight: 600; }
+.fx-bad-text { color: var(--red); font-weight: 600; }
 
 footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 1.25rem 1rem; font-family: 'Consolas', ui-monospace, monospace; }
 footer p { margin: 0.2rem 0; }

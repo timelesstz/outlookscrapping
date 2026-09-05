@@ -22,6 +22,16 @@ self.onmessage = (e) => {
         reqId: data.reqId,
         details: session.getDetails(data.ids),
       })
+    } else if (data.type === 'search') {
+      if (!session) throw new Error('No PST file loaded')
+      self.postMessage({ type: 'search', reqId: data.reqId, ...session.searchBodies(data.query, { limit: data.limit }) })
+    } else if (data.type === 'attachments') {
+      if (!session) throw new Error('No PST file loaded')
+      self.postMessage({ type: 'attachments', reqId: data.reqId, attachments: session.getAttachments(data.id) })
+    } else if (data.type === 'attachment') {
+      if (!session) throw new Error('No PST file loaded')
+      const att = session.getAttachment(data.id, data.index)
+      self.postMessage({ type: 'attachment', reqId: data.reqId, name: att.name, mime: att.mime, size: att.size, data: att.data }, [att.data])
     }
   } catch (err) {
     self.postMessage({

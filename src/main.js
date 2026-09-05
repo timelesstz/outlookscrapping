@@ -1,7 +1,7 @@
 import './styles.css'
 import { exportCsv, exportXlsx, exportTxt, exportJson, exportDoc, printHtml, exportXlsxWorkbook, buildEml, downloadBlob, safeFilename } from './exporters.js'
 import { startCyberBackground } from './cyberbg.js'
-import { renderForensicReport, buildForensicHtmlDoc } from './forensic-render.js'
+import { renderForensicReport, buildForensicHtmlDoc, TRIAGE_TEXT, findingKey } from './forensic-render.js'
 import { renderClientsView, renderCaseFile, filterClients } from './clients-render.js'
 
 const $ = (sel) => document.querySelector(sel)
@@ -40,6 +40,15 @@ function requestDetails(ids) {
   })
 }
 
+// Generic request/response to the worker (search, attachments…).
+function requestWorker(type, payload) {
+  return new Promise((resolve, reject) => {
+    const reqId = ++reqCounter
+    pendingRequests.set(reqId, { resolve, reject })
+    worker.postMessage({ type, reqId, ...payload })
+  })
+}
+
 worker.onmessage = (e) => {
   const data = e.data
   switch (data.type) {
@@ -55,6 +64,16 @@ worker.onmessage = (e) => {
       if (pending) {
         pendingRequests.delete(data.reqId)
         pending.resolve(data.details)
+      }
+      break
+    }
+    case 'search':
+    case 'attachments':
+    case 'attachment': {
+      const pending = pendingRequests.get(data.reqId)
+      if (pending) {
+        pendingRequests.delete(data.reqId)
+        pending.resolve(data)
       }
       break
     }
@@ -211,6 +230,7 @@ function onParsed(data) {
   state.selectedClient = null
   state.clientQuery = ''
   $('#clients-search').value = ''
+  state.triage = loadTriage()
   if (scope.forensic && state.forensic) { renderForensic(); renderClients() }
 
   const banner = $('#messages-truncated')
@@ -421,11 +441,14 @@ async function openViewer(id) {
   } catch (err) {
     textEl.textContent = `Could not load message body: ${err.message}`
   }
+  loadViewerAttachments(id, meta)
 }
 
 function closeViewer() {
   $('#viewer-overlay').hidden = true
   $('#viewer-body-html').srcdoc = ''
+  $('#viewer-attachments').hidden = true
+  $('#viewer-attachments').innerHTML = ''
   state.viewerMessage = null
 }
 
@@ -485,7 +508,7 @@ $('#contact-search').addEventListener('input', renderContacts)
 function renderForensic() {
   const container = $('#forensic-report')
   if (!container || !state.forensic) return
-  container.innerHTML = `<div id="forensic-search-results" hidden></div>` + renderForensicReport(state.forensic)
+  container.innerHTML = `<div id="forensic-search-results" hidden></div>` + renderForensicReport(state.forensic, { triage: state.triage, interactive: true })
   renderForensicSearch()
 }
 
@@ -518,6 +541,109 @@ $('#forensic-search').addEventListener('input', () => { if (state.forensic) rend
 $('#forensic-report').addEventListener('click', (e) => {
   const el = e.target.closest('[data-open-msg]')
   if (el) openViewer(Number(el.dataset.openMsg))
+})
+
+// ---------------------------------------------------------------------------
+// Triage (auditor status + notes, persisted per file in this browser)
+// ---------------------------------------------------------------------------
+function triageStorageKey() { return `tox-triage:${state.fileName}` }
+function loadTriage() {
+  try { return JSON.parse(localStorage.getItem(triageStorageKey()) || '{}') || {} } catch { return {} }
+}
+function saveTriage() {
+  try { localStorage.setItem(triageStorageKey(), JSON.stringify(state.triage || {})) } catch { /* storage unavailable */ }
+}
+function triageOf(key) { return (state.triage && state.triage[key]) || {} }
+
+$('#forensic-report').addEventListener('change', (e) => {
+  const sel = e.target.closest('select[data-triage]')
+  if (!sel) return
+  const k = sel.dataset.triage
+  state.triage = state.triage || {}
+  state.triage[k] = { ...triageOf(k), status: sel.value }
+  sel.className = `fx-triage-sel fx-triage-${sel.value}`
+  saveTriage()
+})
+$('#forensic-report').addEventListener('input', (e) => {
+  const inp = e.target.closest('input[data-triage-note]')
+  if (!inp) return
+  const k = inp.dataset.triageNote
+  state.triage = state.triage || {}
+  state.triage[k] = { ...triageOf(k), note: inp.value }
+  saveTriage()
+})
+
+// ---------------------------------------------------------------------------
+// Deep (body) keyword search — runs in the worker over retained messages
+// ---------------------------------------------------------------------------
+$('#forensic-deep-search').addEventListener('click', async () => {
+  const q = $('#forensic-search').value.trim()
+  const el = $('#forensic-search-results')
+  if (!el) return
+  if (!q) { $('#forensic-search').focus(); return }
+  if (!state.messages.length) {
+    el.hidden = false
+    el.innerHTML = `<div class="fx-searchbox"><strong>Body search</strong> needs the message list — re-run with <em>Messages</em> also ticked.</div>`
+    return
+  }
+  const btn = $('#forensic-deep-search')
+  const original = btn.textContent
+  btn.disabled = true
+  btn.textContent = 'Searching…'
+  el.hidden = false
+  el.innerHTML = `<div class="fx-searchbox">Searching ${state.messages.length.toLocaleString()} message bodies for “${escapeHtml(q)}”…</div>`
+  try {
+    const res = await requestWorker('search', { query: q, limit: 300 })
+    const rows = res.hits.map((h) => {
+      const m = state.messages[h.id] || {}
+      return `<tr><td><span class="fx-ref fx-ref-link" data-open-msg="${h.id}">${escapeHtml(m.ref || '—')}</span></td><td class="fx-nowrap">${m.date ? new Date(m.date).toLocaleDateString() : '—'}</td><td class="fx-ellip">${escapeHtml(m.senderEmail || m.senderName || '')}</td><td>${escapeHtml(m.subject || '(no subject)')}<div class="fx-snip">${escapeHtml(h.snippet)}</div></td><td class="fx-ellip fx-muted">${escapeHtml(m.folderPath || '')}</td></tr>`
+    }).join('')
+    el.innerHTML = `<div class="fx-searchbox"><strong>Body search:</strong> “${escapeHtml(q)}” — ${res.hits.length.toLocaleString()} message(s) mention it <span class="fx-muted">(scanned ${res.scanned.toLocaleString()} bodies)</span>
+      ${res.hits.length ? `<table class="fx-table fx-samples"><thead><tr><th>Ref</th><th>Date</th><th>From</th><th>Subject / context</th><th>Folder</th></tr></thead><tbody>${rows}</tbody></table>` : ''}
+      ${res.truncated ? '<p class="fx-muted">Showing the first 300 matches — refine the keyword to narrow it down.</p>' : ''}</div>`
+  } catch (err) {
+    el.innerHTML = `<div class="fx-searchbox">Search failed: ${escapeHtml(err.message)}</div>`
+  } finally {
+    btn.disabled = false
+    btn.textContent = original
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Attachments in the message viewer
+// ---------------------------------------------------------------------------
+async function loadViewerAttachments(id, meta) {
+  const el = $('#viewer-attachments')
+  el.hidden = true
+  el.innerHTML = ''
+  if (!meta.hasAttachments) return
+  try {
+    const res = await requestWorker('attachments', { id })
+    if (!state.viewerMessage || state.viewerMessage.meta.id !== id) return
+    if (!res.attachments.length) return
+    el.hidden = false
+    el.innerHTML = `<span class="export-label">Attachments (${res.attachments.length}):</span> ` + res.attachments.map((a) => a.embedded
+      ? `<span class="att-chip fx-muted" title="Embedded message — open it from the message list">📧 ${escapeHtml(a.name || 'embedded message')}</span>`
+      : `<button class="btn btn-secondary att-btn" data-att-index="${a.index}" data-att-id="${id}" title="Download">📎 ${escapeHtml(a.name || `attachment-${a.index + 1}`)} <span class="fx-muted">${a.size ? formatBytes(a.size) : ''}</span></button>`
+    ).join(' ')
+  } catch { /* attachments unreadable — leave hidden */ }
+}
+
+$('#viewer-attachments').addEventListener('click', async (e) => {
+  const btn = e.target.closest('.att-btn')
+  if (!btn) return
+  const original = btn.innerHTML
+  btn.disabled = true
+  btn.textContent = 'Downloading…'
+  try {
+    const res = await requestWorker('attachment', { id: Number(btn.dataset.attId), index: Number(btn.dataset.attIndex) })
+    downloadBlob(res.name || 'attachment', res.mime || 'application/octet-stream', new Blob([res.data], { type: res.mime || 'application/octet-stream' }))
+  } catch (err) {
+    alert(`Could not download attachment: ${err.message}`)
+  } finally {
+    btn.disabled = false
+    btn.innerHTML = original
+  }
 })
 
 // ---------------------------------------------------------------------------
@@ -628,6 +754,8 @@ const COMPLAINT_COLUMNS = [
   { key: 'folder', label: 'Folder' },
   { key: 'snippet', label: 'Match' },
   { key: 'messageId', label: 'Message-ID' },
+  { key: 'ref', label: 'Triage status', format: (c) => TRIAGE_TEXT[triageOf(c.ref).status] || 'Open' },
+  { key: 'ref', label: 'Triage note', format: (c) => triageOf(c.ref).note || '' },
 ]
 
 const AUDIT_COLUMNS = [
@@ -637,6 +765,8 @@ const AUDIT_COLUMNS = [
   { key: 'detail', label: 'Detail / recommendation' },
   { key: 'samples', label: 'Evidence items', format: (f) => (f.samples ? f.samples.length : 0) },
   { key: 'samples', label: 'Evidence refs', format: (f) => (f.samples || []).map((s) => s.ref).filter(Boolean).join('; ') },
+  { key: 'title', label: 'Triage status', format: (f) => TRIAGE_TEXT[triageOf(findingKey(f)).status] || 'Open' },
+  { key: 'title', label: 'Triage note', format: (f) => triageOf(findingKey(f)).note || '' },
 ]
 
 const CLIENT_COLUMNS = [
@@ -750,7 +880,7 @@ const exporters = {
   'contacts-xlsx': () => exportXlsx(`${exportBase()}-contacts.xlsx`, filteredContacts(), CONTACT_COLUMNS, 'Contacts'),
   'forensic-html': () => {
     if (!state.forensic) return
-    downloadBlob(`${exportBase()}-forensic-report.html`, 'text/html;charset=utf-8', buildForensicHtmlDoc(state.forensic, state.fileName))
+    downloadBlob(`${exportBase()}-forensic-report.html`, 'text/html;charset=utf-8', buildForensicHtmlDoc(state.forensic, state.fileName, { triage: state.triage }))
   },
   'forensic-json': () => {
     if (!state.forensic) return
@@ -758,11 +888,11 @@ const exporters = {
   },
   'forensic-pdf': () => {
     if (!state.forensic) return
-    printHtml(buildForensicHtmlDoc(state.forensic, state.fileName))
+    printHtml(buildForensicHtmlDoc(state.forensic, state.fileName, { triage: state.triage }))
   },
   'forensic-word': () => {
     if (!state.forensic) return
-    exportDoc(`${exportBase()}-forensic-report.doc`, buildForensicHtmlDoc(state.forensic, state.fileName))
+    exportDoc(`${exportBase()}-forensic-report.doc`, buildForensicHtmlDoc(state.forensic, state.fileName, { triage: state.triage }))
   },
   'forensic-xlsx': () => {
     if (!state.forensic) return

@@ -443,6 +443,21 @@ td.ellipsis { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white
 .fx-tags { margin-top: 0.25rem; }
 .fx-ok { color: var(--green); font-weight: 600; }
 .fx-bad-text { color: var(--red); font-weight: 600; }
+/* Triage controls + attachments */
+.fx-triage-ctl { display: flex; flex-direction: column; gap: 0.25rem; min-width: 150px; }
+.fx-triage-sel, .fx-triage-note { background: var(--panel-2); color: var(--text); border: 1px solid var(--border-red); border-radius: 5px; padding: 0.2rem 0.35rem; font-size: 0.78rem; }
+.fx-triage-note { width: 100%; }
+.fx-triage-sel.fx-triage-reviewed { border-color: var(--green); color: var(--green); }
+.fx-triage-sel.fx-triage-dismissed { border-color: #6b7280; color: var(--muted); }
+.fx-triage-sel.fx-triage-escalate { border-color: var(--red); color: var(--red); font-weight: 700; }
+.fx-triage { display: inline-block; border-radius: 4px; padding: 0 0.4rem; font-size: 0.72rem; font-weight: 700; border: 1px solid var(--border-red); }
+.fx-triage-reviewed { color: var(--green); } .fx-triage-dismissed { color: var(--muted); } .fx-triage-escalate { color: var(--red); }
+.fx-finding .fx-triage-ctl { flex-direction: row; align-items: center; margin-top: 0.4rem; }
+.fx-finding .fx-triage-note { max-width: 420px; }
+.viewer-attachments { padding: 0.6rem 1.25rem; border-bottom: 1px solid var(--border-red); background: var(--panel); display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; font-size: 0.85rem; }
+.att-btn { padding: 0.25rem 0.6rem; font-size: 0.8rem; }
+.att-chip { padding: 0.25rem 0.6rem; }
+
 /* Clients tab */
 .fx-lbl { display: inline-block; border-radius: 4px; padding: 0.05rem 0.45rem; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.3px; }
 .fx-lbl-healthy { background: rgba(45, 255, 155, 0.15); color: var(--green); border: 1px solid rgba(45, 255, 155, 0.4); }

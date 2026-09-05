@@ -132,6 +132,22 @@ function flags(r) {
 
 const sevBadge = (s) => `<span class="fx-sev fx-sev-${esc(s)}">${esc(String(s).toUpperCase())}</span>`
 
+// Auditor triage: a status + note per detection, persisted by main.js.
+export const TRIAGE_TEXT = { open: 'Open', reviewed: 'Reviewed', dismissed: 'Dismissed (false positive)', escalate: 'Escalate' }
+const TRIAGE_STATES = Object.keys(TRIAGE_TEXT)
+function triageControl(key, opts) {
+  const t = (opts.triage && opts.triage[key]) || {}
+  const status = TRIAGE_TEXT[t.status] ? t.status : 'open'
+  if (!opts.interactive) {
+    if (status === 'open' && !t.note) return '<span class="fx-muted">—</span>'
+    return `<span class="fx-triage fx-triage-${esc(status)}">${esc(TRIAGE_TEXT[status])}</span>${t.note ? `<div class="fx-snip">${esc(t.note)}</div>` : ''}`
+  }
+  return `<div class="fx-triage-ctl"><select class="fx-triage-sel fx-triage-${esc(status)}" data-triage="${esc(key)}">${
+    TRIAGE_STATES.map((s) => `<option value="${s}"${s === status ? ' selected' : ''}>${esc(TRIAGE_TEXT[s])}</option>`).join('')
+  }</select><input class="fx-triage-note" data-triage-note="${esc(key)}" placeholder="note…" value="${esc(t.note || '')}" /></div>`
+}
+export const findingKey = (f) => `finding:${f.category}:${f.title}`
+
 // A reference cell: exhibit id, Message-ID as tooltip, clickable to open the
 // source message when it was retained.
 const refCell = (x) => {
@@ -141,7 +157,7 @@ const refCell = (x) => {
   return `<td><span class="fx-ref"${title}>${rf}</span></td>`
 }
 
-function auditSection(r) {
+function auditSection(r, opts = {}) {
   const a = r.audit
   if (!a) return ''
   const c = a.counts
@@ -151,6 +167,7 @@ function auditSection(r) {
     <div class="fx-finding fx-sevborder-${esc(f.severity)}">
       <div class="fx-finding-head">${sevBadge(f.severity)} <strong>${esc(f.title)}</strong> <span class="fx-muted">· ${esc(f.category)}</span></div>
       <p class="fx-finding-detail">${esc(f.detail)}</p>
+      ${triageControl(findingKey(f), opts)}
       ${f.samples && f.samples.length ? `<table class="fx-table fx-samples"><thead><tr><th>Ref</th><th>Date</th><th>From</th><th>Subject</th><th>Folder</th></tr></thead><tbody>${
         f.samples.map((s) => `<tr>${refCell(s)}<td class="fx-nowrap">${esc(fmtDay(s.date))}</td><td class="fx-ellip">${esc(s.from)}</td><td>${esc(s.subject || '')}</td><td class="fx-ellip fx-muted">${esc(s.folder)}</td></tr>`).join('')
       }</tbody></table>` : ''}
@@ -158,7 +175,7 @@ function auditSection(r) {
   return `<section class="fx-section"><h3>Audit findings</h3>${summary}${cards}</section>`
 }
 
-function complaintsSection(r) {
+function complaintsSection(r, opts = {}) {
   const cp = r.complaints
   if (!cp) return ''
   if (!cp.total) return `<section class="fx-section"><h3>Client complaints</h3><p class="fx-muted">No complaint-type messages detected${r.deepScan ? '' : ' in subjects (enable Deep content scan to also search bodies)'}.</p></section>`
@@ -175,12 +192,13 @@ function complaintsSection(r) {
       <td class="fx-ellip">${esc(c.client || c.clientName || '(unknown)')}</td>
       <td>${esc(c.subject || '(no subject)')}<div class="fx-snip">${esc(c.snippet)}</div><div class="fx-tags">${c.tags.map((t) => `<span class="fx-chip">${esc(t)}</span>`).join(' ')}</div></td>
       <td>${status}</td>
+      <td>${triageControl(c.ref, opts)}</td>
     </tr>`
   }).join('')
   const more = cp.records.length > 300 ? `<p class="fx-muted">Showing 300 of ${n(cp.records.length)} complaints (all are in the export).</p>` : ''
   const summary = `<p class="fx-line"><strong>${n(cp.total)}</strong> complaint message(s) · <strong>${n(cp.uniqueClients)}</strong> client(s) · <strong class="fx-bad-text">${n(cp.unanswered)}</strong> unanswered from external clients · severity ${sevBadge('high')} ${n(cp.bySeverity.high)} ${sevBadge('medium')} ${n(cp.bySeverity.medium)} ${sevBadge('low')} ${n(cp.bySeverity.low)}</p><p class="fx-line">${tagChips}</p>`
   return `<section class="fx-section"><h3>Client complaints</h3>${summary}
-    <table class="fx-table fx-samples"><thead><tr><th>Ref</th><th>Severity</th><th>Date</th><th>Client</th><th>Subject / detail</th><th>Reply</th></tr></thead><tbody>${rows}</tbody></table>${more}</section>`
+    <table class="fx-table fx-samples"><thead><tr><th>Ref</th><th>Severity</th><th>Date</th><th>Client</th><th>Subject / detail</th><th>Reply</th><th>Triage</th></tr></thead><tbody>${rows}</tbody></table>${more}</section>`
 }
 
 const LBL = { critical: 'Critical', 'at-risk': 'At risk', watch: 'Watch', healthy: 'Healthy' }
@@ -211,7 +229,7 @@ function clientsSection(r) {
 }
 
 /** Report body HTML (no outer page chrome) — for the in-app tab and the export. */
-export function renderForensicReport(r) {
+export function renderForensicReport(r, opts = {}) {
   const { good, bad } = assess(r)
   return `
     <div class="fx-report">
@@ -226,11 +244,11 @@ export function renderForensicReport(r) {
         </div>
       </div>
 
-      ${auditSection(r)}
+      ${auditSection(r, opts)}
 
       ${clientsSection(r)}
 
-      ${complaintsSection(r)}
+      ${complaintsSection(r, opts)}
 
       <section class="fx-section"><h3>Overview</h3>${statGrid(r)}</section>
 
@@ -296,6 +314,8 @@ export function buildForensicHtmlDoc(r, fileName, opts = {}) {
   .fx-chip { display: inline-block; background: #eee; border-radius: 999px; padding: 0 0.5rem; font-size: 0.72rem; color: #444; }
   .fx-tags { margin-top: 0.2rem; } .fx-ok { color: #1a7f4b; font-weight: 600; } .fx-bad-text { color: #c2102e; font-weight: 600; }
   .fx-ref { font-family: 'Consolas', monospace; font-size: 0.76rem; color: #555; white-space: nowrap; }
+  .fx-triage { display: inline-block; border-radius: 4px; padding: 0 0.4rem; font-size: 0.72rem; font-weight: 700; border: 1px solid #ddd; }
+  .fx-triage-reviewed { color: #1a7f4b; } .fx-triage-dismissed { color: #888; } .fx-triage-escalate { color: #c2102e; }
   .fx-lbl { display: inline-block; border-radius: 4px; padding: 0.05rem 0.45rem; font-size: 0.7rem; font-weight: 700; }
   .fx-lbl-healthy { background: #e6f7ee; color: #1a7f4b; } .fx-lbl-watch { background: #fff3d6; color: #9a5b00; }
   .fx-lbl-at-risk { background: #ffe3d6; color: #b3410a; } .fx-lbl-critical { background: #c2102e; color: #fff; }
@@ -306,7 +326,7 @@ export function buildForensicHtmlDoc(r, fileName, opts = {}) {
 </style></head><body>
   <h1>${esc(opts.title || '🔍 Forensic Report')}</h1>
   <p class="fx-sub"><strong>${esc(fileName)}</strong> · generated ${esc(new Date().toLocaleString())} · Timeless Outlook Extractor</p>
-  ${opts.body != null ? opts.body : renderForensicReport(r)}
+  ${opts.body != null ? opts.body : renderForensicReport(r, { triage: opts.triage })}
   <p class="fx-sub" style="margin-top:2rem">Automated heuristic analysis — findings are indicators for a human reviewer, not conclusions. A Timeless International Product · craftedbytimeless.com</p>
 </body></html>`
 }

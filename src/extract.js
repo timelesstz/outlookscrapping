@@ -176,6 +176,71 @@ export class PstSession {
     })
   }
 
+  /** Scan retained message bodies for a phrase (case-insensitive). */
+  searchBodies(query, { limit = 300 } = {}) {
+    const q = String(query || '').toLowerCase().trim()
+    const hits = []
+    let scanned = 0
+    if (!q) return { hits, scanned, truncated: false }
+    for (let id = 0; id < this.#messageRefs.length; id++) {
+      const msg = this.#messageRefs[id]
+      if (!msg) continue
+      scanned++
+      const text = this.#messageText(msg)
+      const idx = text.toLowerCase().indexOf(q)
+      if (idx < 0) continue
+      const start = Math.max(0, idx - 70)
+      const snip = text.slice(start, idx + q.length + 70).replace(/\s+/g, ' ').trim()
+      hits.push({ id, snippet: (start ? '…' : '') + snip + '…' })
+      if (hits.length >= limit) return { hits, scanned, truncated: true }
+    }
+    return { hits, scanned, truncated: false }
+  }
+
+  /** Attachment list (names/sizes only) for a retained message. */
+  getAttachments(id) {
+    const msg = this.#messageRefs[id]
+    if (!msg) return []
+    const out = []
+    const count = safeGet(() => msg.numberOfAttachments) || 0
+    for (let i = 0; i < count; i++) {
+      let a = null
+      try { a = msg.getAttachment(i) } catch { continue }
+      if (!a) continue
+      const embedded = !!safeGet(() => a.embeddedPSTMessage)
+      out.push({
+        index: i,
+        name: safeGet(() => a.longFilename) || safeGet(() => a.filename)
+          || (embedded ? safeGet(() => a.embeddedPSTMessage.subject) : '') || `attachment-${i + 1}`,
+        size: safeGet(() => a.filesize) || 0,
+        mime: safeGet(() => a.mimeTag) || '',
+        embedded,
+      })
+    }
+    return out
+  }
+
+  /** Raw bytes of one attachment, as a transferable ArrayBuffer. */
+  getAttachment(id, index) {
+    const msg = this.#messageRefs[id]
+    if (!msg) throw new Error('Message not available')
+    const a = msg.getAttachment(index)
+    if (!a) throw new Error('Attachment not found')
+    const stream = a.fileInputStream
+    if (!stream) throw new Error('This attachment is an embedded message and cannot be saved as a file')
+    let size = safeGet(() => a.filesize) || 0
+    try {
+      const len = stream.length
+      if (len && typeof len.toNumber === 'function') size = Math.max(size, len.toNumber())
+    } catch { /* use filesize */ }
+    const buf = Buffer.alloc(size)
+    stream.readCompletely(buf)
+    const name = safeGet(() => a.longFilename) || safeGet(() => a.filename) || `attachment-${index + 1}`
+    const mime = safeGet(() => a.mimeTag) || 'application/octet-stream'
+    const data = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.length)
+    return { name, mime, size, data }
+  }
+
   #addressMap
   #forensic
   #progress

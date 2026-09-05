@@ -237,6 +237,7 @@ function onParsed(data) {
   state.triage = loadTriage()
   state.ai = loadAi()
   if (scope.forensic && state.forensic) { renderForensic(); renderClients() }
+  vaultReady.then(maybePromptAdminLogin)
 
   const banner = $('#messages-truncated')
   if (banner) {
@@ -667,23 +668,53 @@ function saveAi() { try { localStorage.setItem(aiStorageKey(), JSON.stringify(st
 // and is unlocked with the admin passphrase — once per device.
 const vaultReady = loadVaultFile().then((v) => { state.vault = v; updateAiButtons() })
 
-async function openAiSettings() {
+// PIN login: after the one-time passphrase unlock, the key is kept on this
+// device encrypted with a 4–6 digit PIN (never in plaintext). Each visit the
+// admin logs in with the PIN; wrong attempts are limited.
+const PIN_STORE = 'tox-ai-pin'
+const PIN_ITER = 150000
+const PIN_MAX_ATTEMPTS = 5
+function loadPinVault() { try { return JSON.parse(localStorage.getItem(PIN_STORE) || 'null') } catch { return null } }
+function savePinVault(v) { try { localStorage.setItem(PIN_STORE, JSON.stringify(v)) } catch { /* storage */ } }
+function clearPinVault() { try { localStorage.removeItem(PIN_STORE) } catch { /* storage */ } }
+const validPin = (p) => /^\d{4,6}$/.test(p)
+let pendingKey = '' // unlocked by passphrase, waiting for a PIN to be set
+let promptedLogin = false
+
+function adminView() {
+  if (aiEnabled()) return pendingKey ? 'pinset' : 'loggedin'
+  if (loadPinVault()) return 'pinlogin'
+  if (state.vault) return 'passphrase'
+  return 'none'
+}
+
+async function openAiSettings(view) {
   await vaultReady
   const s = getAiSettings()
   const on = aiEnabled()
-  $('#ai-admin').hidden = !state.vault
-  $('#ai-lock').hidden = !on
-  $('#ai-unlock').hidden = on
-  $('#ai-pass').disabled = on
-  $('#ai-unlock-status').textContent = on ? '✓ Unlocked — AI features are on.' : ''
-  $('#ai-key').value = s.key || ''
+  const v = typeof view === 'string' ? view : adminView()
+  $('#ai-admin').hidden = v === 'none'
+  for (const id of ['pinlogin', 'passphrase', 'pinset', 'loggedin']) $(`#ai-${id}`).hidden = v !== id
+  for (const id of ['ai-pin-status', 'ai-unlock-status', 'ai-pinset-status']) $(`#${id}`).textContent = '' // clear stale messages
+  $('#ai-key').value = s.storedKey || '' // never expose the in-memory (PIN-protected) key
   $('#ai-model').value = s.model
   $('#ai-base').value = s.baseUrl
   $('#ai-max').value = s.maxMessages
-  $('#ai-status').textContent = on ? 'AI features are on.' : (state.vault ? 'Locked — enter your admin passphrase to turn AI on.' : 'No key set — AI features are off.')
-  $('#ai-advanced').open = !state.vault && !on
+  $('#ai-status').textContent = on ? 'AI features are on.'
+    : v === 'pinlogin' ? 'Logged out — enter your PIN to turn AI on.'
+    : v === 'passphrase' ? 'Locked — enter your admin passphrase.'
+    : 'No key set — AI features are off.'
+  $('#ai-advanced').open = v === 'none' && !on
   $('#ai-overlay').hidden = false
-  if (state.vault && !on) $('#ai-pass').focus()
+  const focus = { pinlogin: '#ai-pin', passphrase: '#ai-pass', pinset: '#ai-pin-new' }[v]
+  if (focus) $(focus).focus()
+}
+
+// Prompt for the PIN automatically once a file is loaded (once per visit).
+function maybePromptAdminLogin() {
+  if (promptedLogin || aiEnabled() || !loadPinVault()) return
+  promptedLogin = true
+  openAiSettings('pinlogin')
 }
 function readAiForm() {
   return { key: $('#ai-key').value.trim(), baseUrl: $('#ai-base').value.trim() || undefined, model: $('#ai-model').value, maxMessages: $('#ai-max').value }
@@ -691,7 +722,7 @@ function readAiForm() {
 function updateAiButtons() {
   const on = aiEnabled()
   const btn = $('#ai-settings-btn')
-  btn.textContent = on ? '🤖 AI on' : (state.vault ? '🔒 Admin unlock' : '🤖 AI')
+  btn.textContent = on ? '🤖 AI on' : loadPinVault() ? '🔑 Admin login' : state.vault ? '🔒 Admin unlock' : '🤖 AI'
   btn.classList.toggle('ai-on', on)
 }
 async function unlockVault() {
@@ -701,14 +732,68 @@ async function unlockVault() {
   st.textContent = 'Unlocking…'
   try {
     const key = await decryptVault(pass, state.vault)
-    if ($('#ai-remember').checked) saveAiSettings({ key })
-    else setSessionKey(key)
     $('#ai-pass').value = ''
+    st.textContent = ''
+    pendingKey = key
+    setSessionKey(key)
+    clearAiKey() // the plaintext key is never kept in storage
+    clearPinVault() // a fresh PIN is set next
     updateAiButtons()
-    openAiSettings()
-    $('#ai-status').textContent = '✓ Unlocked — AI features are on.'
+    await openAiSettings('pinset')
+    $('#ai-status').textContent = '✓ Unlocked — now set your PIN.'
   } catch (err) {
     st.textContent = `✗ ${err.message}`
+  }
+}
+async function savePin() {
+  const p1 = $('#ai-pin-new').value
+  const p2 = $('#ai-pin-new2').value
+  const st = $('#ai-pinset-status')
+  const key = pendingKey || getAiSettings().key
+  if (!validPin(p1)) { st.textContent = 'PIN must be 4–6 digits.'; return }
+  if (p1 !== p2) { st.textContent = 'PINs do not match.'; return }
+  if (!key) { st.textContent = 'Nothing to protect — unlock with the passphrase first.'; return }
+  st.textContent = 'Saving…'
+  const blob = await encryptVault(p1, key, PIN_ITER)
+  savePinVault({ ...blob, attempts: 0 })
+  clearAiKey()
+  setSessionKey(key)
+  pendingKey = ''
+  $('#ai-pin-new').value = ''
+  $('#ai-pin-new2').value = ''
+  updateAiButtons()
+  await openAiSettings('loggedin')
+  $('#ai-status').textContent = '✓ PIN saved — you are logged in as admin.'
+}
+async function pinLogin() {
+  const pin = $('#ai-pin').value
+  const st = $('#ai-pin-status')
+  const pv = loadPinVault()
+  if (!pv) { openAiSettings('passphrase'); return }
+  if (!validPin(pin)) { st.textContent = 'Enter your 4–6 digit PIN.'; return }
+  st.textContent = 'Checking…'
+  try {
+    const key = await decryptVault(pin, pv)
+    savePinVault({ ...pv, attempts: 0 })
+    setSessionKey(key)
+    $('#ai-pin').value = ''
+    updateAiButtons()
+    await openAiSettings('loggedin')
+    $('#ai-status').textContent = '✓ Logged in as admin — AI features are on.'
+  } catch {
+    const attempts = (pv.attempts || 0) + 1
+    $('#ai-pin').value = ''
+    if (attempts >= PIN_MAX_ATTEMPTS) {
+      clearPinVault()
+      updateAiButtons()
+      await openAiSettings('passphrase')
+      $('#ai-status').textContent = '✗ Too many wrong PINs — the PIN was removed from this device. Enter your admin passphrase.'
+    } else {
+      savePinVault({ ...pv, attempts })
+      const left = PIN_MAX_ATTEMPTS - attempts
+      st.textContent = `✗ Wrong PIN (${left} attempt${left === 1 ? '' : 's'} left).`
+      $('#ai-pin').focus()
+    }
   }
 }
 $('#ai-settings-btn').addEventListener('click', openAiSettings)
@@ -716,15 +801,40 @@ $('#ai-close').addEventListener('click', () => { $('#ai-overlay').hidden = true 
 $('#ai-overlay').addEventListener('click', (e) => { if (e.target.id === 'ai-overlay') $('#ai-overlay').hidden = true })
 $('#ai-unlock').addEventListener('click', unlockVault)
 $('#ai-pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') unlockVault() })
-$('#ai-lock').addEventListener('click', () => {
-  clearAiKey()
-  setSessionKey('')
+$('#ai-pin-login').addEventListener('click', pinLogin)
+$('#ai-pin').addEventListener('keydown', (e) => { if (e.key === 'Enter') pinLogin() })
+$('#ai-pin-forgot').addEventListener('click', () => openAiSettings('passphrase'))
+$('#ai-pin-save').addEventListener('click', savePin)
+$('#ai-pin-new2').addEventListener('keydown', (e) => { if (e.key === 'Enter') savePin() })
+$('#ai-pin-skip').addEventListener('click', async () => {
+  const key = pendingKey || getAiSettings().key
+  if (key) saveAiSettings({ key })
+  pendingKey = ''
   updateAiButtons()
-  openAiSettings()
-  $('#ai-status').textContent = '🔒 Locked — the key has been forgotten on this device.'
+  await openAiSettings('loggedin')
+  $('#ai-status').textContent = 'Unlocked — remembered on this device without a PIN.'
+})
+$('#ai-lock').addEventListener('click', async () => {
+  setSessionKey('')
+  clearAiKey()
+  pendingKey = ''
+  updateAiButtons()
+  await openAiSettings()
+  $('#ai-status').textContent = '🔒 Logged out — enter your PIN to log in again.'
+})
+$('#ai-pin-reset').addEventListener('click', async () => {
+  clearPinVault()
+  setSessionKey('')
+  clearAiKey()
+  pendingKey = ''
+  updateAiButtons()
+  await openAiSettings('passphrase')
+  $('#ai-status').textContent = 'PIN removed — your passphrase is needed next time.'
 })
 $('#ai-save').addEventListener('click', () => {
-  saveAiSettings(readAiForm())
+  const f = readAiForm()
+  if (!f.key) delete f.key // don't wipe/overwrite a PIN-protected key with an empty field
+  saveAiSettings(f)
   $('#ai-status').textContent = aiEnabled() ? 'Saved — AI features are on.' : 'Saved — no key, AI features are off.'
   updateAiButtons()
 })
@@ -736,7 +846,8 @@ $('#ai-clear').addEventListener('click', () => {
   updateAiButtons()
 })
 $('#ai-test').addEventListener('click', async () => {
-  if ($('#ai-key').value.trim()) saveAiSettings(readAiForm())
+  const typed = $('#ai-key').value.trim()
+  if (typed && typed !== getAiSettings().storedKey) saveAiSettings(readAiForm())
   else saveAiSettings({ baseUrl: $('#ai-base').value.trim() || undefined, model: $('#ai-model').value, maxMessages: $('#ai-max').value })
   updateAiButtons()
   $('#ai-status').textContent = 'Testing…'

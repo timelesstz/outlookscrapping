@@ -188,14 +188,42 @@
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ai-title">
       <h2 id="ai-title">🤖 AI deep dive (DeepSeek)</h2>
       <div id="ai-admin" class="ai-admin" hidden>
-        <p class="fx-muted">Your API key is saved in this site as an <strong>encrypted vault</strong>. Enter your admin passphrase to unlock it — once per device.</p>
-        <label>Admin passphrase <input type="password" id="ai-pass" autocomplete="current-password" placeholder="your admin passphrase" /></label>
-        <label class="scope-opt"><input type="checkbox" id="ai-remember" checked /><span>Remember on this device (no passphrase next time)</span></label>
-        <div class="modal-actions">
-          <button id="ai-unlock" class="btn">🔓 Unlock</button>
-          <span id="ai-unlock-status" class="fx-muted"></span>
-          <span class="spacer"></span>
-          <button id="ai-lock" class="btn btn-secondary" hidden>🔒 Lock (forget key on this device)</button>
+        <div id="ai-pinlogin" hidden>
+          <p class="fx-muted">Enter your <strong>admin PIN</strong> to log in on this device.</p>
+          <label>Admin PIN <input type="password" id="ai-pin" class="pin-input" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" placeholder="••••" /></label>
+          <div class="modal-actions">
+            <button id="ai-pin-login" class="btn">🔑 Log in</button>
+            <span id="ai-pin-status" class="fx-muted"></span>
+            <span class="spacer"></span>
+            <button id="ai-pin-forgot" class="btn btn-secondary">Forgot PIN — use passphrase</button>
+          </div>
+        </div>
+        <div id="ai-passphrase" hidden>
+          <p class="fx-muted">Your API key is saved in this site as an <strong>encrypted vault</strong>. Enter your admin passphrase to unlock it — then set a PIN for quick logins on this device.</p>
+          <label>Admin passphrase <input type="password" id="ai-pass" autocomplete="current-password" placeholder="your admin passphrase" /></label>
+          <div class="modal-actions">
+            <button id="ai-unlock" class="btn">🔓 Unlock</button>
+            <span id="ai-unlock-status" class="fx-muted"></span>
+          </div>
+        </div>
+        <div id="ai-pinset" hidden>
+          <p class="fx-muted">✓ Unlocked. Now set a <strong>4–6 digit PIN</strong> for this device — next time you only type the PIN.</p>
+          <label>New PIN <input type="password" id="ai-pin-new" class="pin-input" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="new-password" /></label>
+          <label>Confirm PIN <input type="password" id="ai-pin-new2" class="pin-input" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="new-password" /></label>
+          <div class="modal-actions">
+            <button id="ai-pin-save" class="btn">Save PIN</button>
+            <span id="ai-pinset-status" class="fx-muted"></span>
+            <span class="spacer"></span>
+            <button id="ai-pin-skip" class="btn btn-secondary" title="Stay unlocked on this device without a PIN">Skip — no PIN on this device</button>
+          </div>
+        </div>
+        <div id="ai-loggedin" hidden>
+          <div class="modal-actions">
+            <span class="fx-ok">✓ Logged in as admin — AI features are on.</span>
+            <span class="spacer"></span>
+            <button id="ai-lock" class="btn btn-secondary">🔒 Log out</button>
+            <button id="ai-pin-reset" class="btn btn-secondary" title="Remove the PIN from this device (passphrase needed next time)">Remove PIN</button>
+          </div>
         </div>
       </div>
       <p id="ai-status" class="fx-muted"></p>

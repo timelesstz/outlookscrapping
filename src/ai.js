@@ -18,7 +18,9 @@ function readKey() {
 export function getAiSettings() {
   let s = {}
   try { s = JSON.parse(localStorage.getItem(SETTINGS_STORE) || '{}') || {} } catch { /* none */ }
-  return { ...DEFAULTS, ...s, key: readKey() }
+  let storedKey = ''
+  try { storedKey = localStorage.getItem(KEY_STORE) || '' } catch { /* none */ }
+  return { ...DEFAULTS, ...s, key: readKey(), storedKey }
 }
 
 export function saveAiSettings({ key, baseUrl, model, maxMessages } = {}) {

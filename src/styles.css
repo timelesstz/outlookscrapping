@@ -468,6 +468,8 @@ td.ellipsis { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white
 .modal-actions { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.4rem; }
 #ai-settings-btn.ai-on { border-color: #a78bfa; color: #c4b5fd; box-shadow: 0 0 10px rgba(167, 139, 250, 0.35); }
 .ai-admin { border: 1px solid #4c1d95; border-left: 4px solid #a78bfa; border-radius: var(--radius); padding: 0.75rem 1rem; background: rgba(109, 40, 217, 0.08); display: flex; flex-direction: column; gap: 0.6rem; }
+.ai-admin > div { display: flex; flex-direction: column; gap: 0.6rem; }
+.pin-input { font-size: 1.35rem; letter-spacing: 0.45em; text-align: center; max-width: 200px; font-family: 'Consolas', ui-monospace, monospace; }
 .modal details { border: 1px solid var(--border-red); border-radius: var(--radius); padding: 0.5rem 0.85rem; }
 .modal details[open] { display: flex; flex-direction: column; gap: 0.6rem; }
 .modal summary { cursor: pointer; color: var(--muted); font-size: 0.85rem; }

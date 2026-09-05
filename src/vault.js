@@ -13,12 +13,12 @@ async function deriveKey(passphrase, salt, iterations) {
   return subtle.deriveKey({ name: 'PBKDF2', salt, iterations, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt'])
 }
 
-export async function encryptVault(passphrase, secret) {
+export async function encryptVault(passphrase, secret, iterations = ITERATIONS) {
   const salt = crypto.getRandomValues(new Uint8Array(16))
   const iv = crypto.getRandomValues(new Uint8Array(12))
-  const key = await deriveKey(passphrase, salt, ITERATIONS)
+  const key = await deriveKey(passphrase, salt, iterations)
   const ct = new Uint8Array(await subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(secret)))
-  return { v: 1, kdf: 'PBKDF2-SHA256', iterations: ITERATIONS, cipher: 'AES-256-GCM', salt: b64(salt), iv: b64(iv), ct: b64(ct), created: new Date().toISOString() }
+  return { v: 1, kdf: 'PBKDF2-SHA256', iterations, cipher: 'AES-256-GCM', salt: b64(salt), iv: b64(iv), ct: b64(ct), created: new Date().toISOString() }
 }
 
 export async function decryptVault(passphrase, vault) {

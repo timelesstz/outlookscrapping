@@ -460,13 +460,19 @@ td.ellipsis { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white
 
 /* AI layer */
 .modal-overlay { position: fixed; inset: 0; background: rgba(5, 5, 9, 0.8); display: flex; align-items: center; justify-content: center; padding: 2rem; z-index: 60; backdrop-filter: blur(2px); }
-.modal { background: var(--panel); border: 1px solid var(--border-red); border-radius: var(--radius); width: min(560px, 100%); padding: 1.25rem 1.5rem; box-shadow: 0 0 50px var(--red-glow); display: flex; flex-direction: column; gap: 0.7rem; }
+.modal { background: var(--panel); border: 1px solid var(--border-red); border-radius: var(--radius); width: min(560px, 100%); max-height: 92vh; overflow: auto; padding: 1.25rem 1.5rem; box-shadow: 0 0 50px var(--red-glow); display: flex; flex-direction: column; gap: 0.7rem; }
 .modal h2 { margin: 0; font-size: 1.15rem; color: #fff; }
 .modal label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem; color: var(--muted); }
 .modal input, .modal select { background: var(--panel-2); color: var(--text); border: 1px solid var(--border-red); border-radius: 6px; padding: 0.45rem 0.6rem; font-size: 0.9rem; }
 .modal input:focus, .modal select:focus { outline: none; border-color: var(--red); box-shadow: 0 0 10px var(--red-glow); }
 .modal-actions { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.4rem; }
 #ai-settings-btn.ai-on { border-color: #a78bfa; color: #c4b5fd; box-shadow: 0 0 10px rgba(167, 139, 250, 0.35); }
+.ai-admin { border: 1px solid #4c1d95; border-left: 4px solid #a78bfa; border-radius: var(--radius); padding: 0.75rem 1rem; background: rgba(109, 40, 217, 0.08); display: flex; flex-direction: column; gap: 0.6rem; }
+.modal details { border: 1px solid var(--border-red); border-radius: var(--radius); padding: 0.5rem 0.85rem; }
+.modal details[open] { display: flex; flex-direction: column; gap: 0.6rem; }
+.modal summary { cursor: pointer; color: var(--muted); font-size: 0.85rem; }
+.modal-sub { margin: 0.5rem 0 0; font-size: 0.95rem; color: #ff9fac; }
+.modal code { background: var(--panel-2); padding: 0 0.3rem; border-radius: 4px; }
 .ai-ask { margin-top: -0.25rem; }
 .ai-ask input { flex: 1; min-width: 260px; background: var(--panel); color: var(--text); border: 1px solid #6d28d9; border-radius: 6px; padding: 0.45rem 0.7rem; font-size: 0.9rem; }
 .ai-ask input:focus { outline: none; box-shadow: 0 0 10px rgba(167, 139, 250, 0.5); }

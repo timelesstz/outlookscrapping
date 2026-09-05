@@ -3,7 +3,8 @@ import { exportCsv, exportXlsx, exportTxt, exportJson, exportDoc, printHtml, exp
 import { startCyberBackground } from './cyberbg.js'
 import { renderForensicReport, buildForensicHtmlDoc, TRIAGE_TEXT, findingKey } from './forensic-render.js'
 import { renderClientsView, renderCaseFile, filterClients, renderAiDive } from './clients-render.js'
-import { getAiSettings, saveAiSettings, clearAiKey, aiEnabled, deepseekChat, deepDivePrompt, complaintsReviewPrompt, askPrompt, textOf, keywordsOf } from './ai.js'
+import { getAiSettings, saveAiSettings, clearAiKey, aiEnabled, setSessionKey, deepseekChat, deepDivePrompt, complaintsReviewPrompt, askPrompt, textOf, keywordsOf } from './ai.js'
+import { loadVaultFile, decryptVault, encryptVault, generatePassphrase } from './vault.js'
 
 const $ = (sel) => document.querySelector(sel)
 
@@ -28,6 +29,7 @@ const state = {
   clientQuery: '',
   selectedClient: null,
   ai: { dive: {}, complaints: {} },
+  vault: null,
 }
 
 // Worker request/response plumbing for lazy body fetches
@@ -661,27 +663,66 @@ function loadAi() {
 }
 function saveAi() { try { localStorage.setItem(aiStorageKey(), JSON.stringify(state.ai)) } catch { /* quota */ } }
 
-function openAiSettings() {
+// Admin vault: the API key ships inside the site as an encrypted vault.json
+// and is unlocked with the admin passphrase — once per device.
+const vaultReady = loadVaultFile().then((v) => { state.vault = v; updateAiButtons() })
+
+async function openAiSettings() {
+  await vaultReady
   const s = getAiSettings()
+  const on = aiEnabled()
+  $('#ai-admin').hidden = !state.vault
+  $('#ai-lock').hidden = !on
+  $('#ai-unlock').hidden = on
+  $('#ai-pass').disabled = on
+  $('#ai-unlock-status').textContent = on ? '✓ Unlocked — AI features are on.' : ''
   $('#ai-key').value = s.key || ''
   $('#ai-model').value = s.model
   $('#ai-base').value = s.baseUrl
   $('#ai-max').value = s.maxMessages
-  $('#ai-status').textContent = s.key ? 'Key saved in this browser — AI features are on.' : 'No key set — AI features are off.'
+  $('#ai-status').textContent = on ? 'AI features are on.' : (state.vault ? 'Locked — enter your admin passphrase to turn AI on.' : 'No key set — AI features are off.')
+  $('#ai-advanced').open = !state.vault && !on
   $('#ai-overlay').hidden = false
-  $('#ai-key').focus()
+  if (state.vault && !on) $('#ai-pass').focus()
 }
 function readAiForm() {
   return { key: $('#ai-key').value.trim(), baseUrl: $('#ai-base').value.trim() || undefined, model: $('#ai-model').value, maxMessages: $('#ai-max').value }
 }
 function updateAiButtons() {
   const on = aiEnabled()
-  $('#ai-settings-btn').textContent = on ? '🤖 AI on' : '🤖 AI'
-  $('#ai-settings-btn').classList.toggle('ai-on', on)
+  const btn = $('#ai-settings-btn')
+  btn.textContent = on ? '🤖 AI on' : (state.vault ? '🔒 Admin unlock' : '🤖 AI')
+  btn.classList.toggle('ai-on', on)
+}
+async function unlockVault() {
+  const pass = $('#ai-pass').value
+  const st = $('#ai-unlock-status')
+  if (!pass) { st.textContent = 'Enter your passphrase.'; return }
+  st.textContent = 'Unlocking…'
+  try {
+    const key = await decryptVault(pass, state.vault)
+    if ($('#ai-remember').checked) saveAiSettings({ key })
+    else setSessionKey(key)
+    $('#ai-pass').value = ''
+    updateAiButtons()
+    openAiSettings()
+    $('#ai-status').textContent = '✓ Unlocked — AI features are on.'
+  } catch (err) {
+    st.textContent = `✗ ${err.message}`
+  }
 }
 $('#ai-settings-btn').addEventListener('click', openAiSettings)
 $('#ai-close').addEventListener('click', () => { $('#ai-overlay').hidden = true })
 $('#ai-overlay').addEventListener('click', (e) => { if (e.target.id === 'ai-overlay') $('#ai-overlay').hidden = true })
+$('#ai-unlock').addEventListener('click', unlockVault)
+$('#ai-pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') unlockVault() })
+$('#ai-lock').addEventListener('click', () => {
+  clearAiKey()
+  setSessionKey('')
+  updateAiButtons()
+  openAiSettings()
+  $('#ai-status').textContent = '🔒 Locked — the key has been forgotten on this device.'
+})
 $('#ai-save').addEventListener('click', () => {
   saveAiSettings(readAiForm())
   $('#ai-status').textContent = aiEnabled() ? 'Saved — AI features are on.' : 'Saved — no key, AI features are off.'
@@ -689,12 +730,14 @@ $('#ai-save').addEventListener('click', () => {
 })
 $('#ai-clear').addEventListener('click', () => {
   clearAiKey()
+  setSessionKey('')
   $('#ai-key').value = ''
   $('#ai-status').textContent = 'Key removed — AI features are off.'
   updateAiButtons()
 })
 $('#ai-test').addEventListener('click', async () => {
-  saveAiSettings(readAiForm())
+  if ($('#ai-key').value.trim()) saveAiSettings(readAiForm())
+  else saveAiSettings({ baseUrl: $('#ai-base').value.trim() || undefined, model: $('#ai-model').value, maxMessages: $('#ai-max').value })
   updateAiButtons()
   $('#ai-status').textContent = 'Testing…'
   try {
@@ -703,6 +746,24 @@ $('#ai-test').addEventListener('click', async () => {
   } catch (err) {
     $('#ai-status').textContent = `✗ ${err.message}`
   }
+})
+$('#vault-suggest').addEventListener('click', () => {
+  const p = generatePassphrase()
+  $('#vault-pass').value = p
+  $('#vault-pass2').value = p
+  $('#vault-pass').type = 'text'
+  $('#vault-pass2').type = 'text'
+})
+$('#vault-make').addEventListener('click', async () => {
+  const key = $('#ai-key').value.trim() || getAiSettings().key
+  const p1 = $('#vault-pass').value
+  const p2 = $('#vault-pass2').value
+  if (!key) return alert('Enter the API key first (Advanced → API key), or unlock the current vault.')
+  if (p1.length < 12) return alert('Use a passphrase of at least 12 characters — or click "Suggest strong passphrase".')
+  if (p1 !== p2) return alert('The passphrases do not match.')
+  const vault = await encryptVault(p1, key)
+  downloadBlob('vault.json', 'application/json', JSON.stringify(vault, null, 2))
+  alert('vault.json downloaded. Upload it to the site’s public/ folder (replacing the old one) and redeploy. Keep the passphrase safe — it cannot be recovered.')
 })
 updateAiButtons()
 

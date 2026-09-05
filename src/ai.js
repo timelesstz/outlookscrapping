@@ -7,7 +7,13 @@ const KEY_STORE = 'tox-ai-key'
 const SETTINGS_STORE = 'tox-ai-settings'
 const DEFAULTS = { baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat', maxMessages: 30 }
 
-function readKey() { try { return localStorage.getItem(KEY_STORE) || '' } catch { return '' } }
+let sessionKey = ''
+/** Hold an unlocked key in memory only (not remembered on this device). */
+export function setSessionKey(k) { sessionKey = k || '' }
+function readKey() {
+  if (sessionKey) return sessionKey
+  try { return localStorage.getItem(KEY_STORE) || '' } catch { return '' }
+}
 
 export function getAiSettings() {
   let s = {}
@@ -15,13 +21,14 @@ export function getAiSettings() {
   return { ...DEFAULTS, ...s, key: readKey() }
 }
 
-export function saveAiSettings({ key, baseUrl, model, maxMessages }) {
+export function saveAiSettings({ key, baseUrl, model, maxMessages } = {}) {
   try {
+    const cur = getAiSettings()
     if (key != null) localStorage.setItem(KEY_STORE, key)
     localStorage.setItem(SETTINGS_STORE, JSON.stringify({
-      baseUrl: (baseUrl || DEFAULTS.baseUrl).trim(),
-      model: model || DEFAULTS.model,
-      maxMessages: Math.min(80, Math.max(5, Number(maxMessages) || DEFAULTS.maxMessages)),
+      baseUrl: (baseUrl || cur.baseUrl || DEFAULTS.baseUrl).trim(),
+      model: model || cur.model || DEFAULTS.model,
+      maxMessages: Math.min(80, Math.max(5, Number(maxMessages) || cur.maxMessages || DEFAULTS.maxMessages)),
     }))
   } catch { /* storage unavailable */ }
 }

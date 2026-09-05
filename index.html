@@ -187,24 +187,47 @@
   <div id="ai-overlay" class="modal-overlay" hidden>
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ai-title">
       <h2 id="ai-title">🤖 AI deep dive (DeepSeek)</h2>
-      <p class="fx-muted">Optional. Uses <strong>your own DeepSeek API key</strong>, stored only in this browser. When you use an AI feature, <strong>only the specific emails involved</strong> (one client's thread, the flagged complaints, or the emails matching your question) are sent to DeepSeek — never the whole mailbox. Everything else stays local.</p>
-      <label>API key <input type="password" id="ai-key" placeholder="sk-…" autocomplete="off" /></label>
-      <label>Model
-        <select id="ai-model">
-          <option value="deepseek-chat">deepseek-chat (fast — recommended)</option>
-          <option value="deepseek-reasoner">deepseek-reasoner (slower, deeper reasoning)</option>
-        </select>
-      </label>
-      <label>API base URL <input type="text" id="ai-base" placeholder="https://api.deepseek.com" /></label>
-      <label>Max emails sent per client deep dive <input type="number" id="ai-max" min="5" max="80" /></label>
-      <p id="ai-status" class="fx-muted"></p>
-      <div class="modal-actions">
-        <button id="ai-test" class="btn btn-secondary">Test connection</button>
-        <span class="spacer"></span>
-        <button id="ai-clear" class="btn btn-secondary">Remove key</button>
-        <button id="ai-save" class="btn">Save</button>
-        <button id="ai-close" class="btn btn-secondary">Close</button>
+      <div id="ai-admin" class="ai-admin" hidden>
+        <p class="fx-muted">Your API key is saved in this site as an <strong>encrypted vault</strong>. Enter your admin passphrase to unlock it — once per device.</p>
+        <label>Admin passphrase <input type="password" id="ai-pass" autocomplete="current-password" placeholder="your admin passphrase" /></label>
+        <label class="scope-opt"><input type="checkbox" id="ai-remember" checked /><span>Remember on this device (no passphrase next time)</span></label>
+        <div class="modal-actions">
+          <button id="ai-unlock" class="btn">🔓 Unlock</button>
+          <span id="ai-unlock-status" class="fx-muted"></span>
+          <span class="spacer"></span>
+          <button id="ai-lock" class="btn btn-secondary" hidden>🔒 Lock (forget key on this device)</button>
+        </div>
       </div>
+      <p id="ai-status" class="fx-muted"></p>
+      <details id="ai-advanced">
+        <summary>Advanced — manual key, model, proxy URL, create / update vault</summary>
+        <p class="fx-muted">When you use an AI feature, <strong>only the specific emails involved</strong> (one client's thread, the flagged complaints, or the emails matching your question) are sent to DeepSeek — never the whole mailbox.</p>
+        <label>API key <input type="password" id="ai-key" placeholder="sk-…" autocomplete="off" /></label>
+        <label>Model
+          <select id="ai-model">
+            <option value="deepseek-chat">deepseek-chat (fast — recommended)</option>
+            <option value="deepseek-reasoner">deepseek-reasoner (slower, deeper reasoning)</option>
+          </select>
+        </label>
+        <label>API base URL <input type="text" id="ai-base" placeholder="https://api.deepseek.com" /></label>
+        <label>Max emails sent per client deep dive <input type="number" id="ai-max" min="5" max="80" /></label>
+        <div class="modal-actions">
+          <button id="ai-test" class="btn btn-secondary">Test connection</button>
+          <span class="spacer"></span>
+          <button id="ai-clear" class="btn btn-secondary">Remove key</button>
+          <button id="ai-save" class="btn">Save</button>
+        </div>
+        <h3 class="modal-sub">Create / update the vault</h3>
+        <p class="fx-muted">Encrypts the API key above with a passphrase and downloads <code>vault.json</code>. Put it in the site's <code>public/</code> folder (replacing the old one) and redeploy — then any device only needs the passphrase.</p>
+        <label>New admin passphrase <input type="password" id="vault-pass" autocomplete="new-password" /></label>
+        <label>Confirm passphrase <input type="password" id="vault-pass2" autocomplete="new-password" /></label>
+        <div class="modal-actions">
+          <button id="vault-suggest" class="btn btn-secondary">Suggest strong passphrase</button>
+          <span class="spacer"></span>
+          <button id="vault-make" class="btn">Download vault.json</button>
+        </div>
+      </details>
+      <div class="modal-actions"><span class="spacer"></span><button id="ai-close" class="btn btn-secondary">Close</button></div>
     </div>
   </div>
 

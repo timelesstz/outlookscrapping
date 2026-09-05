@@ -6,8 +6,8 @@
   <title>Timeless Outlook Extractor</title>
   <meta name="description" content="Extract email addresses, messages, and contacts from Outlook PST/OST files — entirely in your browser. No installation, no upload to any server." />
   <link rel="icon" href="data:image/svg+xml,&lt;svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'&gt;&lt;text y='80' font-size='80'&gt;🛡️&lt;/text&gt;&lt;/svg&gt;" />
-  <script type="module" crossorigin src="./assets/index-BTJzeEmP.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-BHvu_CH0.css">
+  <script type="module" crossorigin src="./assets/index-LqJIYztW.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-DyRWXyJa.css">
 </head>
 <body>
   <canvas id="cyber-bg" aria-hidden="true"></canvas>
@@ -73,6 +73,7 @@
         <button class="tab" data-tab="messages" role="tab">Messages <span id="count-messages" class="count"></span></button>
         <button class="tab" data-tab="contacts" role="tab">Contacts <span id="count-contacts" class="count"></span></button>
         <button class="tab" data-tab="forensic" role="tab" hidden>🔍 Forensic Report</button>
+        <button class="tab" data-tab="clients" role="tab" hidden>👥 Clients</button>
       </nav>
 
       <!-- Addresses tab -->
@@ -154,6 +155,23 @@
           <button class="btn" data-export="audit-xlsx">Audit Excel</button>
         </div>
         <div id="forensic-report"></div>
+      </div>
+
+      <!-- Clients tab (client intelligence) -->
+      <div id="tab-clients" class="tab-panel" hidden>
+        <div class="toolbar">
+          <input type="search" id="clients-search" placeholder="Find a client (name, email, company)…" />
+          <span class="spacer"></span>
+          <span class="export-label">Clients:</span>
+          <button class="btn" data-export="clients-csv">CSV</button>
+          <button class="btn" data-export="clients-xlsx">Excel</button>
+          <span class="export-label">Case file:</span>
+          <button class="btn" data-export="case-xlsx">Excel</button>
+          <button class="btn" data-export="case-word">Word</button>
+          <button class="btn" data-export="case-pdf">PDF</button>
+        </div>
+        <div id="client-case" hidden></div>
+        <div id="clients-view"></div>
       </div>
     </section>
   </main>

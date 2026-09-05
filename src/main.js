@@ -2,6 +2,7 @@ import './styles.css'
 import { exportCsv, exportXlsx, exportTxt, exportJson, exportDoc, printHtml, exportXlsxWorkbook, buildEml, downloadBlob, safeFilename } from './exporters.js'
 import { startCyberBackground } from './cyberbg.js'
 import { renderForensicReport, buildForensicHtmlDoc } from './forensic-render.js'
+import { renderClientsView, renderCaseFile, filterClients } from './clients-render.js'
 
 const $ = (sel) => document.querySelector(sel)
 
@@ -23,6 +24,8 @@ const state = {
   addressLimit: 500,
   messageLimit: 500,
   viewerMessage: null,
+  clientQuery: '',
+  selectedClient: null,
 }
 
 // Worker request/response plumbing for lazy body fetches
@@ -205,7 +208,10 @@ function onParsed(data) {
   $('#count-messages').textContent = state.totalMessages.toLocaleString()
   $('#count-contacts').textContent = state.contacts.length.toLocaleString()
   applyScopeToTabs(scope)
-  if (scope.forensic && state.forensic) renderForensic()
+  state.selectedClient = null
+  state.clientQuery = ''
+  $('#clients-search').value = ''
+  if (scope.forensic && state.forensic) { renderForensic(); renderClients() }
 
   const banner = $('#messages-truncated')
   if (banner) {
@@ -242,7 +248,9 @@ document.querySelectorAll('.tab').forEach((btn) => {
 function applyScopeToTabs(scope) {
   let first = null
   document.querySelectorAll('.tab').forEach((btn) => {
-    const on = scope[btn.dataset.tab] !== false
+    // The Clients tab is produced by the forensic scan.
+    const key = btn.dataset.tab === 'clients' ? 'forensic' : btn.dataset.tab
+    const on = scope[key] !== false
     btn.hidden = !on
     if (on && !first) first = btn.dataset.tab
   })
@@ -513,6 +521,63 @@ $('#forensic-report').addEventListener('click', (e) => {
 })
 
 // ---------------------------------------------------------------------------
+// Clients tab (client intelligence)
+// ---------------------------------------------------------------------------
+function clientTimeline(email) {
+  return state.messages
+    .filter((m) => m.senderEmail === email || (m.recipients || []).some((r) => r.email === email))
+    .map((m) => ({
+      id: m.id, ref: m.ref, dir: m.senderEmail === email ? 'in' : 'out', date: m.date,
+      subject: m.subject, folder: m.folderPath, from: m.senderEmail || m.senderName, to: m.to, hasAttachments: m.hasAttachments,
+    }))
+    .sort((a, b) => (a.date ? +new Date(a.date) : 0) - (b.date ? +new Date(b.date) : 0))
+}
+
+function selectedClientObj() {
+  return state.selectedClient ? state.forensic?.clients?.list.find((c) => c.email === state.selectedClient) : null
+}
+
+function clientComplaints(email) {
+  return (state.forensic?.complaints?.records || []).filter((c) => c.client === email)
+}
+
+function renderClients() {
+  const view = $('#clients-view')
+  if (!view || !state.forensic) return
+  view.innerHTML = renderClientsView(state.forensic.clients, { query: state.clientQuery })
+  renderClientCase()
+}
+
+function renderClientCase() {
+  const box = $('#client-case')
+  if (!box) return
+  const c = selectedClientObj()
+  if (!c) { box.hidden = true; box.innerHTML = ''; return }
+  box.innerHTML = renderCaseFile(c, clientTimeline(c.email), clientComplaints(c.email))
+  box.hidden = false
+  box.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+$('#clients-search').addEventListener('input', () => {
+  state.clientQuery = $('#clients-search').value
+  renderClients()
+})
+
+$('#tab-clients').addEventListener('click', (e) => {
+  const open = e.target.closest('[data-open-msg]')
+  if (open) { openViewer(Number(open.dataset.openMsg)); return }
+  if (e.target.closest('#case-back')) { state.selectedClient = null; renderClientCase(); return }
+  const row = e.target.closest('.cl-row[data-client]')
+  if (row) { state.selectedClient = row.dataset.client; renderClientCase(); return }
+  const dom = e.target.closest('.cl-row[data-domain]')
+  if (dom) {
+    state.clientQuery = dom.dataset.domain
+    $('#clients-search').value = state.clientQuery
+    renderClients()
+  }
+})
+
+// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 const ADDRESS_COLUMNS = [
@@ -574,6 +639,43 @@ const AUDIT_COLUMNS = [
   { key: 'samples', label: 'Evidence refs', format: (f) => (f.samples || []).map((s) => s.ref).filter(Boolean).join('; ') },
 ]
 
+const CLIENT_COLUMNS = [
+  { key: 'label', label: 'Attention', format: (c) => ({ critical: 'Critical', 'at-risk': 'At risk', watch: 'Watch', healthy: 'Healthy' })[c.label] || c.label },
+  { key: 'score', label: 'Score' },
+  { key: 'name', label: 'Name' },
+  { key: 'email', label: 'Email' },
+  { key: 'domain', label: 'Company (domain)' },
+  { key: 'inbound', label: 'Messages from client' },
+  { key: 'outbound', label: 'Messages to client' },
+  { key: 'answered', label: 'Answered' },
+  { key: 'unanswered', label: 'Unanswered' },
+  { key: 'medianResponseHours', label: 'Median response (hours)' },
+  { key: 'complaints', label: 'Complaints High', format: (c) => c.complaints.high },
+  { key: 'complaints', label: 'Complaints Medium', format: (c) => c.complaints.medium },
+  { key: 'complaints', label: 'Complaints Low', format: (c) => c.complaints.low },
+  { key: 'complaintTags', label: 'Complaint types', format: (c) => Object.entries(c.complaintTags || {}).map(([t, k]) => `${t} (${k})`).join('; ') },
+  { key: 'escalated', label: 'Escalated' },
+  { key: 'financial', label: 'Financial msgs' },
+  { key: 'legal', label: 'Legal msgs' },
+  { key: 'bec', label: 'Payment-change requests' },
+  { key: 'firstIn', label: 'First contact', format: (c) => (c.firstIn ? new Date(c.firstIn).toISOString() : '') },
+  { key: 'lastIn', label: 'Last from client', format: (c) => (c.lastIn ? new Date(c.lastIn).toISOString() : '') },
+  { key: 'lastOut', label: 'Last reply to client', format: (c) => (c.lastOut ? new Date(c.lastOut).toISOString() : '') },
+  { key: 'waiting', label: 'Awaiting reply', format: (c) => (c.waiting ? 'Yes' : 'No') },
+  { key: 'refs', label: 'Notable refs', format: (c) => (c.refs || []).map((r) => `${r.ref} (${r.type})`).join('; ') },
+]
+
+const TIMELINE_COLUMNS = [
+  { key: 'ref', label: 'Ref' },
+  { key: 'dir', label: 'Direction', format: (m) => (m.dir === 'in' ? 'From client' : 'To client') },
+  { key: 'date', label: 'Date', format: (m) => (m.date ? new Date(m.date).toISOString() : '') },
+  { key: 'subject', label: 'Subject' },
+  { key: 'from', label: 'From' },
+  { key: 'to', label: 'To' },
+  { key: 'folder', label: 'Folder' },
+  { key: 'hasAttachments', label: 'Attachments', format: (m) => (m.hasAttachments ? 'Yes' : '') },
+]
+
 // Flattened category matches (one row per detected message) for the workbook.
 const MATCH_COLUMNS = [
   { key: 'ref', label: 'Ref' },
@@ -633,6 +735,7 @@ function buildReportWorkbook() {
     { name: 'Complaints', rows: f.complaints.records, columns: COMPLAINT_COLUMNS },
     { name: 'Investigation Matches', rows: matches, columns: MATCH_COLUMNS },
     { name: 'Red Flags', rows: redflags, columns: REDFLAG_COLUMNS },
+    { name: 'Clients', rows: f.clients?.list || [], columns: CLIENT_COLUMNS },
   ]
 }
 
@@ -664,6 +767,43 @@ const exporters = {
   'forensic-xlsx': () => {
     if (!state.forensic) return
     exportXlsxWorkbook(`${exportBase()}-forensic-report.xlsx`, buildReportWorkbook())
+  },
+  'clients-csv': () => {
+    const rows = filterClients(state.forensic?.clients?.list || [], state.clientQuery)
+    if (!rows.length) return alert('No external clients detected to export.')
+    exportCsv(`${exportBase()}-clients.csv`, rows, CLIENT_COLUMNS)
+  },
+  'clients-xlsx': () => {
+    const rows = filterClients(state.forensic?.clients?.list || [], state.clientQuery)
+    if (!rows.length) return alert('No external clients detected to export.')
+    exportXlsx(`${exportBase()}-clients.xlsx`, rows, CLIENT_COLUMNS, 'Clients')
+  },
+  'case-xlsx': () => {
+    const c = selectedClientObj()
+    if (!c) return alert('Click a client row first to open their case file.')
+    const summary = CLIENT_COLUMNS.map((col) => ({ k: col.label, v: col.format ? col.format(c) : c[col.key] }))
+    exportXlsxWorkbook(`${exportBase()}-client-${safeFilename(c.email)}.xlsx`, [
+      { name: 'Summary', rows: summary, columns: [{ key: 'k', label: 'Field' }, { key: 'v', label: 'Value' }] },
+      { name: 'Timeline', rows: clientTimeline(c.email), columns: TIMELINE_COLUMNS },
+      { name: 'Complaints', rows: clientComplaints(c.email), columns: COMPLAINT_COLUMNS },
+      { name: 'Notable', rows: c.refs || [], columns: [{ key: 'ref', label: 'Ref' }, { key: 'type', label: 'Type' }, { key: 'date', label: 'Date', format: (r) => (r.date ? new Date(r.date).toISOString() : '') }, { key: 'subject', label: 'Subject' }] },
+    ])
+  },
+  'case-word': () => {
+    const c = selectedClientObj()
+    if (!c) return alert('Click a client row first to open their case file.')
+    exportDoc(`${exportBase()}-client-${safeFilename(c.email)}.doc`, buildForensicHtmlDoc(null, state.fileName, {
+      title: `Client case file — ${c.name || c.email}`,
+      body: renderCaseFile(c, clientTimeline(c.email), clientComplaints(c.email), { print: true }),
+    }))
+  },
+  'case-pdf': () => {
+    const c = selectedClientObj()
+    if (!c) return alert('Click a client row first to open their case file.')
+    printHtml(buildForensicHtmlDoc(null, state.fileName, {
+      title: `Client case file — ${c.name || c.email}`,
+      body: renderCaseFile(c, clientTimeline(c.email), clientComplaints(c.email), { print: true }),
+    }))
   },
   'complaints-csv': () => {
     if (!state.forensic?.complaints?.records.length) return alert('No complaints detected to export.')

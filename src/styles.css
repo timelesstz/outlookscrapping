@@ -443,6 +443,30 @@ td.ellipsis { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white
 .fx-tags { margin-top: 0.25rem; }
 .fx-ok { color: var(--green); font-weight: 600; }
 .fx-bad-text { color: var(--red); font-weight: 600; }
+/* Clients tab */
+.fx-lbl { display: inline-block; border-radius: 4px; padding: 0.05rem 0.45rem; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.3px; }
+.fx-lbl-healthy { background: rgba(45, 255, 155, 0.15); color: var(--green); border: 1px solid rgba(45, 255, 155, 0.4); }
+.fx-lbl-watch { background: rgba(255, 176, 45, 0.15); color: var(--amber); border: 1px solid rgba(255, 176, 45, 0.5); }
+.fx-lbl-at-risk { background: rgba(255, 110, 45, 0.18); color: #ff8a4c; border: 1px solid rgba(255, 110, 45, 0.5); }
+.fx-lbl-critical { background: var(--red); color: #fff; border: 1px solid var(--red); }
+.cl-score { height: 5px; background: var(--panel-2); border-radius: 3px; margin-top: 0.35rem; width: 90px; overflow: hidden; }
+.cl-score span { display: block; height: 100%; background: linear-gradient(90deg, var(--amber), var(--red)); }
+.cl-row { cursor: pointer; }
+.cl-row:hover { background: rgba(255, 45, 79, 0.1) !important; }
+.cl-name { font-weight: 600; }
+.cl-email { font-size: 0.78rem; }
+.cl-wrap { max-height: none; }
+.cl-table thead th { position: static; }
+.cl-hint { margin: 0.25rem 0 0.75rem; font-size: 0.85rem; }
+.cl-in { color: var(--amber); font-weight: 700; font-size: 0.78rem; white-space: nowrap; }
+.cl-out { color: var(--green); font-weight: 700; font-size: 0.78rem; white-space: nowrap; }
+.case-file { border: 1px solid var(--red-dark); border-radius: var(--radius); padding: 1rem 1.25rem; margin-bottom: 1.5rem; background: rgba(255, 45, 79, 0.04); box-shadow: 0 0 25px rgba(255, 45, 79, 0.12); }
+.case-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; margin: 0.75rem 0; }
+.case-title { margin: 0; font-size: 1.15rem; color: #fff; }
+.case-file .fx-section > h4 { color: #ff9fac; border-bottom: 1px solid var(--border-red); padding-bottom: 0.3rem; margin: 0 0 0.6rem; }
+.case-problems { margin: 0; padding-left: 1.2rem; }
+.case-problems li { margin: 0.3rem 0; line-height: 1.45; }
+.cl-stat-v { font-size: 1.05rem !important; }
 .fx-ref { font-family: 'Consolas', ui-monospace, monospace; font-size: 0.76rem; color: var(--muted); white-space: nowrap; }
 .fx-ref-link { color: var(--red); cursor: pointer; text-decoration: underline dotted; }
 .fx-ref-link:hover { color: #fff; }

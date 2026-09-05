@@ -183,6 +183,33 @@ function complaintsSection(r) {
     <table class="fx-table fx-samples"><thead><tr><th>Ref</th><th>Severity</th><th>Date</th><th>Client</th><th>Subject / detail</th><th>Reply</th></tr></thead><tbody>${rows}</tbody></table>${more}</section>`
 }
 
+const LBL = { critical: 'Critical', 'at-risk': 'At risk', watch: 'Watch', healthy: 'Healthy' }
+const lblBadge = (l) => `<span class="fx-lbl fx-lbl-${esc(l)}">${esc(LBL[l] || l)}</span>`
+const hrs = (h) => (h == null ? '—' : h < 48 ? `${h} h` : `${Math.round((h / 24) * 10) / 10} d`)
+
+function clientsSection(r) {
+  const cl = r.clients
+  if (!cl) return ''
+  if (!cl.total) return `<section class="fx-section"><h3>Clients</h3><p class="fx-muted">No external clients identified.</p></section>`
+  const top = cl.list.slice(0, 25)
+  const rows = top.map((c) => `<tr>
+      <td>${lblBadge(c.label)} <span class="fx-muted">${c.score}</span></td>
+      <td>${esc(c.name || c.email)}${c.name ? `<div class="fx-muted">${esc(c.email)}</div>` : ''}</td>
+      <td class="fx-ellip">${esc(c.domain)}</td>
+      <td class="num">${n(c.inbound)} / ${n(c.outbound)}</td>
+      <td class="num">${c.complaints.high + c.complaints.medium + c.complaints.low ? `${c.complaints.high}/${c.complaints.medium}/${c.complaints.low}` : '—'}</td>
+      <td class="num">${n(c.financial)}${c.bec ? ` <span class="fx-sev fx-sev-high">BEC ${n(c.bec)}</span>` : ''}</td>
+      <td class="num">${n(c.unanswered)}</td>
+      <td class="num">${hrs(c.medianResponseHours)}</td>
+      <td class="fx-nowrap">${fmtDay(c.lastIn)}</td>
+    </tr>`).join('')
+  return `<section class="fx-section"><h3>Clients needing attention</h3>
+    <p class="fx-line"><strong>${n(cl.total)}</strong> external client(s) · <strong class="fx-bad-text">${n(cl.atRisk)}</strong> need attention · <strong>${n(cl.unansweredTotal)}</strong> unanswered message(s) · median response <strong>${hrs(cl.medianResponseHours)}</strong></p>
+    <table class="fx-table fx-samples"><thead><tr><th>Attention</th><th>Client</th><th>Company</th><th>In / Out</th><th>Complaints H/M/L</th><th>Financial</th><th>Unanswered</th><th>Response</th><th>Last contact</th></tr></thead><tbody>${rows}</tbody></table>
+    ${cl.total > top.length ? `<p class="fx-muted">Top ${top.length} of ${n(cl.total)} — the full list is in the Clients tab and the Excel workbook.</p>` : ''}
+  </section>`
+}
+
 /** Report body HTML (no outer page chrome) — for the in-app tab and the export. */
 export function renderForensicReport(r) {
   const { good, bad } = assess(r)
@@ -200,6 +227,8 @@ export function renderForensicReport(r) {
       </div>
 
       ${auditSection(r)}
+
+      ${clientsSection(r)}
 
       ${complaintsSection(r)}
 
@@ -223,10 +252,10 @@ export function renderForensicReport(r) {
 }
 
 /** Full standalone HTML document for download (light, print-friendly). */
-export function buildForensicHtmlDoc(r, fileName) {
+export function buildForensicHtmlDoc(r, fileName, opts = {}) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Forensic Report — ${esc(fileName)}</title>
+<title>${esc(opts.title || 'Forensic Report')} — ${esc(fileName)}</title>
 <style>
   body { font-family: 'Segoe UI', system-ui, sans-serif; color: #1a1a22; background: #fff; max-width: 1000px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
   h1 { font-size: 1.5rem; margin: 0 0 0.25rem; }
@@ -267,11 +296,17 @@ export function buildForensicHtmlDoc(r, fileName) {
   .fx-chip { display: inline-block; background: #eee; border-radius: 999px; padding: 0 0.5rem; font-size: 0.72rem; color: #444; }
   .fx-tags { margin-top: 0.2rem; } .fx-ok { color: #1a7f4b; font-weight: 600; } .fx-bad-text { color: #c2102e; font-weight: 600; }
   .fx-ref { font-family: 'Consolas', monospace; font-size: 0.76rem; color: #555; white-space: nowrap; }
+  .fx-lbl { display: inline-block; border-radius: 4px; padding: 0.05rem 0.45rem; font-size: 0.7rem; font-weight: 700; }
+  .fx-lbl-healthy { background: #e6f7ee; color: #1a7f4b; } .fx-lbl-watch { background: #fff3d6; color: #9a5b00; }
+  .fx-lbl-at-risk { background: #ffe3d6; color: #b3410a; } .fx-lbl-critical { background: #c2102e; color: #fff; }
+  .case-file h3 { border: none; margin-top: 0.5rem; } .case-file h4 { color: #c2102e; margin-top: 1.2rem; }
+  .case-problems { padding-left: 1.2rem; } .case-problems li { margin: 0.25rem 0; }
+  .cl-in { color: #9a5b00; font-weight: 700; } .cl-out { color: #1a7f4b; font-weight: 700; }
   @media print { .fx-cat, .fx-finding { break-inside: avoid; } details { display: block; } details:not([open]) > *:not(summary) { display: revert; } }
 </style></head><body>
-  <h1>🔍 Forensic Report</h1>
+  <h1>${esc(opts.title || '🔍 Forensic Report')}</h1>
   <p class="fx-sub"><strong>${esc(fileName)}</strong> · generated ${esc(new Date().toLocaleString())} · Timeless Outlook Extractor</p>
-  ${renderForensicReport(r)}
+  ${opts.body != null ? opts.body : renderForensicReport(r)}
   <p class="fx-sub" style="margin-top:2rem">Automated heuristic analysis — findings are indicators for a human reviewer, not conclusions. A Timeless International Product · craftedbytimeless.com</p>
 </body></html>`
 }

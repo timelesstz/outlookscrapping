@@ -110,6 +110,11 @@ const MAX_SAMPLES = 200
 const MAX_ATTACH_DETAIL = 1000
 const MAX_MISMATCH = 500
 const MAX_SENSITIVE = 500
+const MAX_THREADS = 250000 // conversation threads tracked for reply matching
+const MAX_THREAD_EVENTS = 40 // in/out events kept per thread
+const MAX_PARTY_REFS = 25 // notable message refs kept per client
+const MAX_CLIENTS_OUT = 2000 // clients returned in the report
+const MAX_DOMAINS_OUT = 500
 
 const FOLDER_RULES = [
   [/(^|[^a-z])sent([^a-z]|$)|sent items|sent mail|outbox/i, 'sent'],
@@ -170,6 +175,32 @@ export class ForensicCollector {
     this.becTotal = 0
     this.approvals = 0
     this.refSeq = 0 // running exhibit reference for every scanned message
+    // Conversation threads (topic-keyed) for thread-accurate reply matching,
+    // and per-party aggregates that become the client intelligence view.
+    this.threads = new Map() // key -> { inbound: [{t, from}], outbound: [t] }
+    this.threadsCapped = false
+    this.parties = new Map() // email -> aggregate
+  }
+
+  // Per-address aggregate (internal vs external is decided at finalize once the
+  // owner's domain is known).
+  #party(email, name) {
+    let p = this.parties.get(email)
+    if (!p) {
+      p = {
+        email, name: name || '', inbound: 0, outbound: 0,
+        firstIn: null, lastIn: null, lastOut: null,
+        complaints: { high: 0, medium: 0, low: 0 }, complaintTags: {}, escalated: 0,
+        financial: 0, legal: 0, security: 0, bec: 0, refs: [],
+      }
+      this.parties.set(email, p)
+    }
+    if (name && !p.name) p.name = name
+    return p
+  }
+
+  #noteRef(p, type, ref, subject, date) {
+    if (p.refs.length < MAX_PARTY_REFS) p.refs.push({ type, ref, subject, date })
   }
 
   // Score how serious a complaint looks from its text.
@@ -203,6 +234,44 @@ export class ForensicCollector {
     if (cat === 'drafts') this.drafts++
     else if (cat === 'sent') this.sent++
     else this.received++
+
+    const isOut = cat === 'sent'
+    const isIn = cat !== 'sent' && cat !== 'drafts'
+    const t = m.date instanceof Date && !isNaN(m.date) ? m.date.getTime() : null
+
+    // Volumes + recency per party (client intelligence).
+    if (isIn && m.senderEmail) {
+      const p = this.#party(m.senderEmail, m.senderName)
+      p.inbound++
+      if (t != null) {
+        if (p.firstIn == null || t < p.firstIn) p.firstIn = t
+        if (p.lastIn == null || t > p.lastIn) p.lastIn = t
+      }
+    }
+    if (isOut && m.recipientEmails) {
+      for (const rcpt of m.recipientEmails) {
+        const p = this.#party(rcpt, '')
+        p.outbound++
+        if (t != null && (p.lastOut == null || t > p.lastOut)) p.lastOut = t
+      }
+    }
+
+    // Conversation-thread events: lets us match a reply to the thread it
+    // answers, instead of "any later email to that person".
+    const tkey = threadKey(m.topic, m.subject)
+    if (t != null && (isIn || isOut) && tkey) {
+      let th = this.threads.get(tkey)
+      if (!th) {
+        if (this.threads.size < MAX_THREADS) {
+          th = { inbound: [], outbound: [] }
+          this.threads.set(tkey, th)
+        } else this.threadsCapped = true
+      }
+      if (th) {
+        if (isIn && m.senderEmail && th.inbound.length < MAX_THREAD_EVENTS) th.inbound.push({ t, from: m.senderEmail })
+        if (isOut && th.outbound.length < MAX_THREAD_EVENTS) th.outbound.push(t)
+      }
+    }
 
     if (m.hasAttachments) this.withAttachments++
     if (m.isRead === false) this.unread++
@@ -258,6 +327,12 @@ export class ForensicCollector {
       if (!match) continue
       const bucket = this.categories[c.key]
       bucket.count++
+      // Attribute financial / legal / security signals to the sending client.
+      if (isIn && m.senderEmail && (c.key === 'financial' || c.key === 'legal' || c.key === 'security')) {
+        const p = this.#party(m.senderEmail, m.senderName)
+        p[c.key]++
+        if (c.key !== 'security') this.#noteRef(p, c.key, ref, subject, m.date)
+      }
       if (bucket.samples.length < MAX_SAMPLES) {
         bucket.samples.push({
           id: m.id ?? null, ref, messageId,
@@ -291,21 +366,29 @@ export class ForensicCollector {
     }
 
     // Complaint detection (incoming mail only; sent/drafts are the org's own).
-    if (cat !== 'sent' && cat !== 'drafts' && COMPLAINT_SIGNAL_RE.test(haystack)) {
+    if (isIn && COMPLAINT_SIGNAL_RE.test(haystack)) {
       this.complaintsTotal++
+      const severity = this.#complaintSeverity(haystack)
+      const tags = this.#complaintTags(haystack)
+      const escalated = ESCALATION_RE.test(haystack)
       if (this.complaints.length < MAX_SAMPLES * 5) {
         this.complaints.push({
-          ref, messageId, id: m.id ?? null,
+          ref, messageId, id: m.id ?? null, thread: tkey,
           client: m.senderEmail || '',
           clientName: m.senderName || '',
-          date: m.date instanceof Date ? m.date.getTime() : null,
+          date: t,
           subject,
           folder: m.folderPath,
-          severity: this.#complaintSeverity(haystack),
-          tags: this.#complaintTags(haystack),
-          escalated: ESCALATION_RE.test(haystack),
+          severity, tags, escalated,
           snippet: snippet(haystack, Math.max(0, haystack.search(COMPLAINT_SIGNAL_RE))),
         })
+      }
+      if (m.senderEmail) {
+        const p = this.#party(m.senderEmail, m.senderName)
+        p.complaints[severity]++
+        for (const tg of tags) p.complaintTags[tg] = (p.complaintTags[tg] || 0) + 1
+        if (escalated) p.escalated++
+        this.#noteRef(p, 'complaint', ref, subject, m.date)
       }
     }
 
@@ -314,6 +397,11 @@ export class ForensicCollector {
       this.becTotal++
       if (this.bec.length < MAX_MISMATCH) {
         this.bec.push({ ref, messageId, from: m.senderEmail || m.senderName, subject, folder: m.folderPath, date: m.date, sent: cat === 'sent' })
+      }
+      if (isIn && m.senderEmail) {
+        const p = this.#party(m.senderEmail, m.senderName)
+        p.bec++
+        this.#noteRef(p, 'bec', ref, subject, m.date)
       }
     }
     if (APPROVAL_RE.test(haystack)) this.approvals++
@@ -324,7 +412,9 @@ export class ForensicCollector {
   finalize(opts = {}) {
     const complaints = this.#buildComplaints(opts.primaryDomain || '')
     const audit = this.#buildAudit(complaints, opts.primaryDomain || '')
+    const clients = this.#buildClients(opts.primaryDomain || '')
     return {
+      clients,
       deepScan: this.deepScan,
       total: this.total,
       sent: this.sent,
@@ -365,8 +455,16 @@ export class ForensicCollector {
     const records = this.complaints.map((c) => {
       const dom = domainOf(c.client)
       const external = !!c.client && (!primaryDomain || dom !== primaryDomain)
-      const reply = c.client ? this.sentTo.get(c.client) : undefined
-      const responded = reply !== undefined && (c.date == null || reply >= c.date)
+      // Thread-accurate: answered only if an outbound message exists in the
+      // same conversation after the complaint. Falls back to "any later mail
+      // to that person" when the thread wasn't trackable.
+      const th = c.thread ? this.threads.get(c.thread) : null
+      let responded
+      if (th && c.date != null) responded = th.outbound.some((o) => o >= c.date)
+      else {
+        const reply = c.client ? this.sentTo.get(c.client) : undefined
+        responded = reply !== undefined && (c.date == null || reply >= c.date)
+      }
       return { ...c, external, responded }
     })
     records.sort((a, b) => (SEV_ORDER[a.severity] - SEV_ORDER[b.severity]) || ((b.date || 0) - (a.date || 0)))
@@ -389,6 +487,96 @@ export class ForensicCollector {
       bySeverity,
       uniqueClients: clients.size,
       unanswered,
+    }
+  }
+
+  // Per-client intelligence: volumes, problems, financial flags and
+  // thread-accurate responsiveness, scored for "attention needed".
+  #buildClients(primaryDomain) {
+    // Responsiveness per inbound sender, from conversation-thread events.
+    const resp = new Map()
+    for (const th of this.threads.values()) {
+      if (!th.inbound.length) continue
+      const outs = th.outbound.slice().sort((a, b) => a - b)
+      for (const ev of th.inbound) {
+        let r = resp.get(ev.from)
+        if (!r) { r = { answered: 0, unanswered: 0, deltas: [] }; resp.set(ev.from, r) }
+        const next = outs.find((o) => o >= ev.t)
+        if (next !== undefined) {
+          r.answered++
+          if (r.deltas.length < 200) r.deltas.push(next - ev.t)
+        } else r.unanswered++
+      }
+    }
+
+    const label = (score) => (score >= 70 ? 'critical' : score >= 45 ? 'at-risk' : score >= 20 ? 'watch' : 'healthy')
+    const list = []
+    let unansweredTotal = 0
+    const allDeltas = []
+    for (const p of this.parties.values()) {
+      if (!p.email) continue
+      const domain = domainOf(p.email)
+      if (primaryDomain && domain === primaryDomain) continue // internal staff
+      if (p.inbound === 0 && p.outbound === 0) continue
+      const r = resp.get(p.email) || { answered: 0, unanswered: 0, deltas: [] }
+      const median = medianOf(r.deltas)
+      if (r.deltas.length && allDeltas.length < 5000) allDeltas.push(...r.deltas.slice(0, 50))
+      unansweredTotal += r.unanswered
+      const waiting = p.lastIn != null && (p.lastOut == null || p.lastIn > p.lastOut)
+      // Attention score: unanswered mail, complaint severity, escalation,
+      // financial/fraud signals, and a client left waiting.
+      let score = 0
+      score += Math.min(30, r.unanswered * 10)
+      score += Math.min(25, p.complaints.high * 8 + p.complaints.medium * 3 + p.complaints.low)
+      score += Math.min(15, p.escalated * 7)
+      score += Math.min(15, p.bec * 10 + p.financial * 2 + p.legal * 3)
+      if (waiting && r.unanswered > 0) score += 15
+      score = Math.min(100, Math.round(score))
+      list.push({
+        email: p.email, name: p.name, domain,
+        inbound: p.inbound, outbound: p.outbound, total: p.inbound + p.outbound,
+        firstIn: p.firstIn, lastIn: p.lastIn, lastOut: p.lastOut, waiting,
+        complaints: p.complaints, complaintTags: p.complaintTags, escalated: p.escalated,
+        financial: p.financial, legal: p.legal, security: p.security, bec: p.bec,
+        answered: r.answered, unanswered: r.unanswered,
+        medianResponseHours: median == null ? null : Math.round((median / 36e5) * 10) / 10,
+        score, label: label(score), refs: p.refs,
+      })
+    }
+    list.sort((a, b) => b.score - a.score || b.total - a.total)
+
+    // Roll up by domain (organisation) so a company with several contacts
+    // shows as one client.
+    const byDomain = new Map()
+    for (const c of list) {
+      let d = byDomain.get(c.domain)
+      if (!d) {
+        d = { domain: c.domain, contacts: 0, inbound: 0, outbound: 0, complaints: 0, escalated: 0, financial: 0, bec: 0, unanswered: 0, score: 0, lastIn: null }
+        byDomain.set(c.domain, d)
+      }
+      d.contacts++
+      d.inbound += c.inbound
+      d.outbound += c.outbound
+      d.complaints += c.complaints.high + c.complaints.medium + c.complaints.low
+      d.escalated += c.escalated
+      d.financial += c.financial
+      d.bec += c.bec
+      d.unanswered += c.unanswered
+      d.score = Math.max(d.score, c.score)
+      if (c.lastIn != null && (d.lastIn == null || c.lastIn > d.lastIn)) d.lastIn = c.lastIn
+    }
+    const domains = [...byDomain.values()].sort((a, b) => b.score - a.score || b.inbound - a.inbound)
+    for (const d of domains) d.label = label(d.score)
+
+    const overallMedian = medianOf(allDeltas)
+    return {
+      total: list.length,
+      atRisk: list.filter((c) => c.label === 'at-risk' || c.label === 'critical').length,
+      unansweredTotal,
+      medianResponseHours: overallMedian == null ? null : Math.round((overallMedian / 36e5) * 10) / 10,
+      threadsCapped: this.threadsCapped,
+      list: list.slice(0, MAX_CLIENTS_OUT),
+      domains: domains.slice(0, MAX_DOMAINS_OUT),
     }
   }
 
@@ -492,6 +680,22 @@ function domainOf(email) {
 function firstEmailIn(text) {
   const m = String(text || '').match(/[^\s@<>,;:"'()[\]\\]+@[^\s@<>,;:"'()[\]\\]+\.[A-Za-z]{2,}/)
   return m ? m[0] : ''
+}
+
+// Normalise a conversation topic / subject into a thread key by stripping
+// reply/forward prefixes so "RE: Re: Fwd: Invoice 123" == "invoice 123".
+function threadKey(topic, subject) {
+  let s = String(topic || subject || '').toLowerCase()
+  s = s.replace(/^\s*(?:\[[^\]]*\]\s*)?(?:(?:re|fw|fwd|aw|sv|vs|tr|wg|antw)\s*(?:\[\d+\])?\s*:\s*)+/i, '')
+  s = s.replace(/\s+/g, ' ').trim()
+  return s.length >= 2 ? s : ''
+}
+
+function medianOf(values) {
+  if (!values.length) return null
+  const a = values.slice().sort((x, y) => x - y)
+  const mid = a.length >> 1
+  return a.length % 2 ? a[mid] : (a[mid - 1] + a[mid]) / 2
 }
 
 // Return the 'YYYY-MM' labels between the first and last active month that

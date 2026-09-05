@@ -280,6 +280,7 @@ export class PstSession {
         subject, senderName, senderEmail, date, folderPath, folderCategory,
         hasAttachments, isRead,
         messageId: safeGet(() => msg.internetMessageId) || '',
+        topic: safeGet(() => msg.conversationTopic) || '',
         recipientEmails: recipients.map((r) => r.email).filter(Boolean),
         attachmentNames: hasAttachments ? this.#attachmentNames(msg) : [],
         bodyText: this.#scope.deepScan ? this.#messageText(msg) : '',

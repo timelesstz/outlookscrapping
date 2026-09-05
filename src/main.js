@@ -2,7 +2,8 @@ import './styles.css'
 import { exportCsv, exportXlsx, exportTxt, exportJson, exportDoc, printHtml, exportXlsxWorkbook, buildEml, downloadBlob, safeFilename } from './exporters.js'
 import { startCyberBackground } from './cyberbg.js'
 import { renderForensicReport, buildForensicHtmlDoc, TRIAGE_TEXT, findingKey } from './forensic-render.js'
-import { renderClientsView, renderCaseFile, filterClients } from './clients-render.js'
+import { renderClientsView, renderCaseFile, filterClients, renderAiDive } from './clients-render.js'
+import { getAiSettings, saveAiSettings, clearAiKey, aiEnabled, deepseekChat, deepDivePrompt, complaintsReviewPrompt, askPrompt, textOf, keywordsOf } from './ai.js'
 
 const $ = (sel) => document.querySelector(sel)
 
@@ -26,6 +27,7 @@ const state = {
   viewerMessage: null,
   clientQuery: '',
   selectedClient: null,
+  ai: { dive: {}, complaints: {} },
 }
 
 // Worker request/response plumbing for lazy body fetches
@@ -231,6 +233,7 @@ function onParsed(data) {
   state.clientQuery = ''
   $('#clients-search').value = ''
   state.triage = loadTriage()
+  state.ai = loadAi()
   if (scope.forensic && state.forensic) { renderForensic(); renderClients() }
 
   const banner = $('#messages-truncated')
@@ -508,7 +511,7 @@ $('#contact-search').addEventListener('input', renderContacts)
 function renderForensic() {
   const container = $('#forensic-report')
   if (!container || !state.forensic) return
-  container.innerHTML = `<div id="forensic-search-results" hidden></div>` + renderForensicReport(state.forensic, { triage: state.triage, interactive: true })
+  container.innerHTML = `<div id="forensic-search-results" hidden></div>` + renderForensicReport(state.forensic, { triage: state.triage, interactive: true, ai: state.ai.complaints })
   renderForensicSearch()
 }
 
@@ -647,6 +650,221 @@ $('#viewer-attachments').addEventListener('click', async (e) => {
 })
 
 // ---------------------------------------------------------------------------
+// AI deep dive (DeepSeek, bring-your-own-key, opt-in)
+// ---------------------------------------------------------------------------
+function aiStorageKey() { return `tox-ai:${state.fileName}` }
+function loadAi() {
+  try {
+    const s = JSON.parse(localStorage.getItem(aiStorageKey()) || '{}') || {}
+    return { dive: s.dive || {}, complaints: s.complaints || {} }
+  } catch { return { dive: {}, complaints: {} } }
+}
+function saveAi() { try { localStorage.setItem(aiStorageKey(), JSON.stringify(state.ai)) } catch { /* quota */ } }
+
+function openAiSettings() {
+  const s = getAiSettings()
+  $('#ai-key').value = s.key || ''
+  $('#ai-model').value = s.model
+  $('#ai-base').value = s.baseUrl
+  $('#ai-max').value = s.maxMessages
+  $('#ai-status').textContent = s.key ? 'Key saved in this browser — AI features are on.' : 'No key set — AI features are off.'
+  $('#ai-overlay').hidden = false
+  $('#ai-key').focus()
+}
+function readAiForm() {
+  return { key: $('#ai-key').value.trim(), baseUrl: $('#ai-base').value.trim() || undefined, model: $('#ai-model').value, maxMessages: $('#ai-max').value }
+}
+function updateAiButtons() {
+  const on = aiEnabled()
+  $('#ai-settings-btn').textContent = on ? '🤖 AI on' : '🤖 AI'
+  $('#ai-settings-btn').classList.toggle('ai-on', on)
+}
+$('#ai-settings-btn').addEventListener('click', openAiSettings)
+$('#ai-close').addEventListener('click', () => { $('#ai-overlay').hidden = true })
+$('#ai-overlay').addEventListener('click', (e) => { if (e.target.id === 'ai-overlay') $('#ai-overlay').hidden = true })
+$('#ai-save').addEventListener('click', () => {
+  saveAiSettings(readAiForm())
+  $('#ai-status').textContent = aiEnabled() ? 'Saved — AI features are on.' : 'Saved — no key, AI features are off.'
+  updateAiButtons()
+})
+$('#ai-clear').addEventListener('click', () => {
+  clearAiKey()
+  $('#ai-key').value = ''
+  $('#ai-status').textContent = 'Key removed — AI features are off.'
+  updateAiButtons()
+})
+$('#ai-test').addEventListener('click', async () => {
+  saveAiSettings(readAiForm())
+  updateAiButtons()
+  $('#ai-status').textContent = 'Testing…'
+  try {
+    const r = await deepseekChat('Reply with the JSON object {"ok": true}.', { maxTokens: 30 })
+    $('#ai-status').textContent = r.data && r.data.ok ? '✓ Connected to DeepSeek.' : `Connected, but unexpected reply: ${r.text.slice(0, 80)}`
+  } catch (err) {
+    $('#ai-status').textContent = `✗ ${err.message}`
+  }
+})
+updateAiButtons()
+
+function requireAi() {
+  if (aiEnabled()) return true
+  openAiSettings()
+  return false
+}
+
+// Fetch bodies for message ids (batched); returns Map id -> plain text.
+async function bodiesFor(ids) {
+  const out = new Map()
+  for (let i = 0; i < ids.length; i += 50) {
+    const batch = ids.slice(i, i + 50)
+    const details = await requestDetails(batch)
+    details.forEach((d, j) => out.set(batch[j], textOf(d)))
+  }
+  return out
+}
+
+function aiSheets(c) {
+  const ai = state.ai?.dive?.[c.email]
+  if (!ai || !ai.data) return []
+  const d = ai.data
+  const rows = [
+    ['Summary', d.summary], ['Risk', `${d.risk || ''} — ${d.riskReason || ''}`], ['Sentiment', d.sentiment],
+    ['Attention', d.attention?.assessment], ['Response quality', d.attention?.responseQuality],
+    ['Unanswered refs', (d.attention?.unansweredRefs || []).join('; ')],
+    ['Problems', (d.problems || []).map((p) => `[${p.ref}] ${p.severity} ${p.type}: ${p.issue}`).join('\n')],
+    ['Financial', (d.financial || []).map((f) => `[${f.ref}] ${f.status}${f.amount ? ` ${f.amount}` : ''}: ${f.detail}`).join('\n')],
+    ['Next actions', (d.nextActions || []).join('\n')],
+    ['Model', ai.model], ['Generated', ai.when ? new Date(ai.when).toISOString() : ''],
+  ].map(([k, v]) => ({ k, v: v == null ? '' : String(v) }))
+  return [{ name: 'AI deep dive', rows, columns: [{ key: 'k', label: 'Field' }, { key: 'v', label: 'Value' }] }]
+}
+
+// 1) Per-client deep dive — sends only this client's emails.
+$('#tab-clients').addEventListener('click', async (e) => {
+  if (!e.target.closest('#case-ai')) return
+  const c = selectedClientObj()
+  if (!c || !requireAi()) return
+  const out = $('#case-ai-out')
+  const btn = $('#case-ai')
+  btn.disabled = true
+  out.innerHTML = '<div class="ai-box"><span class="spinner-inline"></span> Reading this client’s emails and asking DeepSeek… (only this client’s thread is sent)</div>'
+  try {
+    const s = getAiSettings()
+    const all = clientTimeline(c.email)
+    if (!all.length) throw new Error('No messages for this client are in the message list — re-run with "Messages" ticked.')
+    // Prefer the notable (flagged) messages, then the most recent, within the cap.
+    const notable = new Set((c.refs || []).map((r) => r.ref))
+    const picked = [...all.filter((m) => notable.has(m.ref)), ...all.filter((m) => !notable.has(m.ref)).slice(-s.maxMessages)]
+    const seen = new Set()
+    const tl = picked.filter((m) => !seen.has(m.id) && seen.add(m.id)).slice(0, s.maxMessages)
+    tl.sort((a, b) => (a.date ? +new Date(a.date) : 0) - (b.date ? +new Date(b.date) : 0))
+    const bodies = await bodiesFor(tl.map((m) => m.id))
+    const msgs = tl.map((m) => ({ ...m, text: bodies.get(m.id) || '' }))
+    const r = await deepseekChat(deepDivePrompt(c, msgs, clientComplaints(c.email)), { maxTokens: 3000 })
+    state.ai.dive[c.email] = { data: r.data, text: r.text, usage: r.usage, model: s.model, when: Date.now(), messagesSent: msgs.length }
+    saveAi()
+    out.innerHTML = renderAiDive(state.ai.dive[c.email])
+  } catch (err) {
+    out.innerHTML = `<div class="ai-box ai-error"><strong>AI deep dive failed:</strong> ${escapeHtml(err.message)}</div>`
+  } finally {
+    btn.disabled = false
+  }
+})
+
+// 2) AI review of the keyword-flagged complaints — confirms or dismisses each.
+$('#forensic-ai-review').addEventListener('click', async () => {
+  if (!requireAi()) return
+  const records = (state.forensic?.complaints?.records || []).filter((c) => c.id != null)
+  if (!records.length) return alert('No flagged complaints with readable bodies. Load with "Messages" ticked so bodies can be read.')
+  const MAX = 200
+  const todo = records.slice(0, MAX)
+  const btn = $('#forensic-ai-review')
+  const original = btn.textContent
+  btn.disabled = true
+  try {
+    const bodies = await bodiesFor(todo.map((c) => c.id))
+    const BATCH = 25
+    for (let i = 0; i < todo.length; i += BATCH) {
+      btn.textContent = `Reviewing ${Math.min(i + BATCH, todo.length)} / ${todo.length}…`
+      const batch = todo.slice(i, i + BATCH).map((c) => ({ ...c, text: bodies.get(c.id) || '' }))
+      const r = await deepseekChat(complaintsReviewPrompt(batch), { maxTokens: 3000 })
+      for (const v of (r.data && r.data.results) || []) if (v && v.ref) state.ai.complaints[v.ref] = v
+      saveAi()
+    }
+    renderForensic()
+    const notC = todo.filter((c) => state.ai.complaints[c.ref]?.isComplaint === false).length
+    alert(`AI reviewed ${todo.length} flagged complaint(s): ${todo.length - notC} confirmed, ${notC} judged not to be complaints.${todo.length < records.length ? ` (First ${MAX} only.)` : ''}\n\nUse "Apply AI dismissals" to mark the non-complaints as Dismissed in triage.`)
+  } catch (err) {
+    alert(`AI review failed: ${err.message}`)
+  } finally {
+    btn.disabled = false
+    btn.textContent = original
+  }
+})
+$('#forensic-ai-apply').addEventListener('click', () => {
+  let k = 0
+  for (const [ref, v] of Object.entries(state.ai?.complaints || {})) {
+    if (v.isComplaint === false && (triageOf(ref).status || 'open') === 'open') {
+      state.triage = state.triage || {}
+      state.triage[ref] = { status: 'dismissed', note: `AI: not a complaint${v.problem ? ` — ${v.problem}` : ''}` }
+      k++
+    }
+  }
+  saveTriage()
+  renderForensic()
+  alert(k ? `${k} complaint(s) marked Dismissed (false positive) from the AI review.` : 'Nothing to apply — run "🤖 Review complaints" first, or all AI dismissals are already applied.')
+})
+
+// 3) Ask the mailbox — retrieves matching emails by keyword, then asks.
+async function askMailbox() {
+  const q = $('#ask-input').value.trim()
+  const out = $('#ask-out')
+  if (!q || !requireAi()) return
+  if (!state.messages.length) {
+    out.hidden = false
+    out.innerHTML = '<div class="ai-box">Asking needs the message list — re-run with <em>Messages</em> ticked.</div>'
+    return
+  }
+  const btn = $('#ask-btn')
+  btn.disabled = true
+  out.hidden = false
+  out.innerHTML = '<div class="ai-box"><span class="spinner-inline"></span> Finding relevant emails and asking DeepSeek…</div>'
+  try {
+    const score = new Map()
+    for (const kw of keywordsOf(q)) {
+      const res = await requestWorker('search', { query: kw, limit: 40 })
+      for (const h of res.hits) score.set(h.id, (score.get(h.id) || 0) + 1)
+    }
+    let ids = [...score.entries()].sort((a, b) => b[1] - a[1]).slice(0, 15).map(([id]) => id)
+    if (!ids.length) ids = (state.forensic?.complaints?.records || []).filter((c) => c.id != null).slice(0, 10).map((c) => c.id)
+    if (!ids.length) { out.innerHTML = '<div class="ai-box">No emails matched the words in your question — try different keywords.</div>'; return }
+    const bodies = await bodiesFor(ids)
+    const msgs = ids.map((id) => {
+      const m = state.messages[id]
+      return { ref: m.ref, dir: /(^|\/)sent/i.test(m.folderPath || '') ? 'out' : 'in', date: m.date, subject: m.subject, from: m.senderEmail || m.senderName, text: bodies.get(id) || '' }
+    })
+    const r = await deepseekChat(askPrompt(q, msgs), { maxTokens: 2000 })
+    const a = r.data || {}
+    const html = escapeHtml(a.answer || r.text || '').replace(/\n/g, '<br />').replace(/\[(M\d{6})\]/g, (_, ref) => `[<span class="fx-ref fx-ref-link" data-open-ref="${ref}">${ref}</span>]`)
+    out.innerHTML = `<div class="ai-box"><div class="ai-head"><h4>🤖 Answer</h4><span class="fx-muted">confidence: ${escapeHtml(a.confidence || '—')} · ${ids.length} email(s) sent</span></div><p>${html}</p></div>`
+  } catch (err) {
+    out.innerHTML = `<div class="ai-box ai-error"><strong>Ask failed:</strong> ${escapeHtml(err.message)}</div>`
+  } finally {
+    btn.disabled = false
+  }
+}
+$('#ask-btn').addEventListener('click', askMailbox)
+$('#ask-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') askMailbox() })
+
+// Open a message from an exhibit ref cited in AI output.
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-open-ref]')
+  if (!el) return
+  const m = state.messages.find((x) => x.ref === el.dataset.openRef)
+  if (m) openViewer(m.id)
+})
+
+// ---------------------------------------------------------------------------
 // Clients tab (client intelligence)
 // ---------------------------------------------------------------------------
 function clientTimeline(email) {
@@ -679,7 +897,7 @@ function renderClientCase() {
   if (!box) return
   const c = selectedClientObj()
   if (!c) { box.hidden = true; box.innerHTML = ''; return }
-  box.innerHTML = renderCaseFile(c, clientTimeline(c.email), clientComplaints(c.email))
+  box.innerHTML = renderCaseFile(c, clientTimeline(c.email), clientComplaints(c.email), { ai: state.ai.dive[c.email] || null })
   box.hidden = false
   box.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
@@ -756,6 +974,8 @@ const COMPLAINT_COLUMNS = [
   { key: 'messageId', label: 'Message-ID' },
   { key: 'ref', label: 'Triage status', format: (c) => TRIAGE_TEXT[triageOf(c.ref).status] || 'Open' },
   { key: 'ref', label: 'Triage note', format: (c) => triageOf(c.ref).note || '' },
+  { key: 'ref', label: 'AI verdict', format: (c) => { const v = state.ai?.complaints?.[c.ref]; return v ? (v.isComplaint === false ? 'Not a complaint' : `Complaint (${v.severity || ''} ${v.type || ''})`.replace(/\s+\)/, ')')) : '' } },
+  { key: 'ref', label: 'AI problem', format: (c) => state.ai?.complaints?.[c.ref]?.problem || '' },
 ]
 
 const AUDIT_COLUMNS = [
@@ -880,7 +1100,7 @@ const exporters = {
   'contacts-xlsx': () => exportXlsx(`${exportBase()}-contacts.xlsx`, filteredContacts(), CONTACT_COLUMNS, 'Contacts'),
   'forensic-html': () => {
     if (!state.forensic) return
-    downloadBlob(`${exportBase()}-forensic-report.html`, 'text/html;charset=utf-8', buildForensicHtmlDoc(state.forensic, state.fileName, { triage: state.triage }))
+    downloadBlob(`${exportBase()}-forensic-report.html`, 'text/html;charset=utf-8', buildForensicHtmlDoc(state.forensic, state.fileName, { triage: state.triage, ai: state.ai.complaints }))
   },
   'forensic-json': () => {
     if (!state.forensic) return
@@ -888,11 +1108,11 @@ const exporters = {
   },
   'forensic-pdf': () => {
     if (!state.forensic) return
-    printHtml(buildForensicHtmlDoc(state.forensic, state.fileName, { triage: state.triage }))
+    printHtml(buildForensicHtmlDoc(state.forensic, state.fileName, { triage: state.triage, ai: state.ai.complaints }))
   },
   'forensic-word': () => {
     if (!state.forensic) return
-    exportDoc(`${exportBase()}-forensic-report.doc`, buildForensicHtmlDoc(state.forensic, state.fileName, { triage: state.triage }))
+    exportDoc(`${exportBase()}-forensic-report.doc`, buildForensicHtmlDoc(state.forensic, state.fileName, { triage: state.triage, ai: state.ai.complaints }))
   },
   'forensic-xlsx': () => {
     if (!state.forensic) return
@@ -917,6 +1137,7 @@ const exporters = {
       { name: 'Timeline', rows: clientTimeline(c.email), columns: TIMELINE_COLUMNS },
       { name: 'Complaints', rows: clientComplaints(c.email), columns: COMPLAINT_COLUMNS },
       { name: 'Notable', rows: c.refs || [], columns: [{ key: 'ref', label: 'Ref' }, { key: 'type', label: 'Type' }, { key: 'date', label: 'Date', format: (r) => (r.date ? new Date(r.date).toISOString() : '') }, { key: 'subject', label: 'Subject' }] },
+      ...aiSheets(c),
     ])
   },
   'case-word': () => {
@@ -924,7 +1145,7 @@ const exporters = {
     if (!c) return alert('Click a client row first to open their case file.')
     exportDoc(`${exportBase()}-client-${safeFilename(c.email)}.doc`, buildForensicHtmlDoc(null, state.fileName, {
       title: `Client case file — ${c.name || c.email}`,
-      body: renderCaseFile(c, clientTimeline(c.email), clientComplaints(c.email), { print: true }),
+      body: renderCaseFile(c, clientTimeline(c.email), clientComplaints(c.email), { print: true, ai: state.ai.dive[c.email] || null }),
     }))
   },
   'case-pdf': () => {
@@ -932,7 +1153,7 @@ const exporters = {
     if (!c) return alert('Click a client row first to open their case file.')
     printHtml(buildForensicHtmlDoc(null, state.fileName, {
       title: `Client case file — ${c.name || c.email}`,
-      body: renderCaseFile(c, clientTimeline(c.email), clientComplaints(c.email), { print: true }),
+      body: renderCaseFile(c, clientTimeline(c.email), clientComplaints(c.email), { print: true, ai: state.ai.dive[c.email] || null }),
     }))
   },
   'complaints-csv': () => {

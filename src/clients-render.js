@@ -93,8 +93,34 @@ export function renderClientsView(clients, { query = '' } = {}) {
 
 const TYPE_TEXT = { complaint: 'Complaint', financial: 'Financial', legal: 'Legal', bec: 'Payment/bank change' }
 
+/** Render a stored AI deep-dive result ({data, text, usage, model, when} or {error}). */
+export function renderAiDive(ai, { print = false } = {}) {
+  if (!ai) return ''
+  if (ai.error) return `<div class="ai-box ai-error"><strong>AI deep dive failed:</strong> ${esc(ai.error)}</div>`
+  const d = ai.data
+  const meta = `${esc(ai.model || '')}${ai.when ? ` · ${esc(new Date(ai.when).toLocaleString())}` : ''}${ai.messagesSent ? ` · ${n(ai.messagesSent)} emails sent` : ''}${ai.usage ? ` · ${n(ai.usage.total_tokens)} tokens` : ''}`
+  if (!d) return `<div class="ai-box"><div class="ai-head"><h4>🤖 AI deep dive</h4><span class="fx-muted">${meta}</span></div><pre class="ai-raw">${esc(ai.text || '')}</pre></div>`
+  const refs = (s) => (print ? esc(s) : esc(s).replace(/\[(M\d{6})\]/g, (_, r) => `[<span class="fx-ref fx-ref-link" data-open-ref="${r}">${r}</span>]`))
+  const li = (arr, fn) => (arr && arr.length ? `<ul>${arr.map(fn).join('')}</ul>` : '<p class="fx-muted">None identified.</p>')
+  const sevB = (s) => { const k = s === 'high' || s === 'medium' || s === 'low' ? s : 'low'; return `<span class="fx-sev fx-sev-${k}">${esc(String(s || '').toUpperCase())}</span>` }
+  const att = d.attention || {}
+  return `<div class="ai-box">
+    <div class="ai-head"><h4>🤖 AI deep dive</h4><span class="fx-muted">${meta}</span></div>
+    <p class="ai-summary">${refs(d.summary || '')}</p>
+    <div class="ai-grid">
+      <div><h5>Problems</h5>${li(d.problems, (p) => `<li>${sevB(p.severity)} <strong>${esc(p.type || '')}</strong> — ${refs(p.issue || '')} ${p.ref ? refs(`[${p.ref}]`) : ''}</li>`)}</div>
+      <div><h5>Financial</h5>${li(d.financial, (f) => `<li><strong>${esc(f.status || '')}</strong>${f.amount ? ` · <strong>${esc(f.amount)}</strong>` : ''} — ${refs(f.detail || '')} ${f.ref ? refs(`[${f.ref}]`) : ''}</li>`)}</div>
+    </div>
+    <div class="ai-grid">
+      <div><h5>Attention</h5><p>${refs(att.assessment || '')}</p><p class="fx-muted">Response quality: <strong>${esc(att.responseQuality || '—')}</strong>${att.unansweredRefs && att.unansweredRefs.length ? ` · unanswered: ${att.unansweredRefs.map((r) => refs(`[${r}]`)).join(' ')}` : ''}</p></div>
+      <div><h5>Risk</h5><p>${sevB(d.risk)} · sentiment: <strong>${esc(d.sentiment || '—')}</strong></p><p>${refs(d.riskReason || '')}</p></div>
+    </div>
+    <h5>Recommended next actions</h5>${li(d.nextActions, (a) => `<li>${refs(a)}</li>`)}
+  </div>`
+}
+
 /** Case file for one client. timeline: [{id, ref, dir, date, subject, folder, from, to, hasAttachments}] */
-export function renderCaseFile(c, timeline, complaints, { print = false } = {}) {
+export function renderCaseFile(c, timeline, complaints, { print = false, ai = null } = {}) {
   const total = c.complaints.high + c.complaints.medium + c.complaints.low
   const stats = [
     ['Attention score', `${c.score}/100`], ['Messages in / out', `${n(c.inbound)} / ${n(c.outbound)}`],
@@ -122,12 +148,13 @@ export function renderCaseFile(c, timeline, complaints, { print = false } = {}) 
   const tlRows = timeline.map((m) => `<tr>${print ? `<td class="fx-ref">${esc(m.ref || '')}</td>` : `<td>${refSpan(m)}</td>`}<td>${m.dir === 'in' ? '<span class="cl-in">⬇ IN</span>' : '<span class="cl-out">⬆ OUT</span>'}</td><td class="fx-nowrap">${esc(fmtDate(m.date))}</td><td>${esc(m.subject || '(no subject)')}${m.hasAttachments ? ' 📎' : ''}</td><td class="fx-ellip fx-muted">${esc(m.folder)}</td></tr>`).join('')
 
   return `<div class="case-file">
-    ${print ? '' : '<button id="case-back" class="btn btn-secondary">← All clients</button>'}
+    ${print ? '' : '<button id="case-back" class="btn btn-secondary">← All clients</button> <button id="case-ai" class="btn" title="Send this client’s emails to DeepSeek for a written investigation">🤖 AI deep dive</button>'}
     <div class="case-head">
       <div><h3 class="case-title">${esc(c.name || c.email)} ${labelBadge(c.label)}</h3><p class="fx-muted">${esc(c.email)} · ${esc(c.domain)}</p></div>
     </div>
     <div class="fx-stats">${stats.map(([k, v]) => `<div class="fx-stat"><span class="fx-stat-v cl-stat-v">${esc(v)}</span><span class="fx-stat-k">${esc(k)}</span></div>`).join('')}</div>
     <section class="fx-section"><h4>What’s going on with this client</h4><ul class="case-problems">${problems.map((p) => `<li>${esc(p)}</li>`).join('')}</ul>${tags ? `<p class="fx-line">${tags}</p>` : ''}</section>
+    <div id="case-ai-out">${ai ? renderAiDive(ai, { print }) : ''}</div>
     ${notable ? `<section class="fx-section"><h4>Notable items <span class="fx-muted">(${n(c.refs.length)})</span></h4><table class="fx-table fx-samples"><thead><tr><th>Ref</th><th>Type</th><th>Date</th><th>Subject</th></tr></thead><tbody>${notable}</tbody></table></section>` : ''}
     ${complaints.length ? `<section class="fx-section"><h4>Complaints <span class="fx-muted">(${n(complaints.length)})</span></h4><table class="fx-table fx-samples"><thead><tr><th>Ref</th><th>Severity</th><th>Date</th><th>Subject / detail</th><th>Reply</th></tr></thead><tbody>${compRows}</tbody></table></section>` : ''}
     <section class="fx-section"><h4>Timeline <span class="fx-muted">(${n(timeline.length)} message${timeline.length === 1 ? '' : 's'}${timeline.length ? '' : ' — tick “Messages” when loading to include the full timeline'})</span></h4>

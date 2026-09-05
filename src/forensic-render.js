@@ -148,6 +148,14 @@ function triageControl(key, opts) {
 }
 export const findingKey = (f) => `finding:${f.category}:${f.title}`
 
+// AI (DeepSeek) verdict on a flagged complaint, when the user has run a review.
+function aiVerdictCell(ref, opts) {
+  const v = opts.ai && opts.ai[ref]
+  if (!v) return '<span class="fx-muted">—</span>'
+  if (v.isComplaint === false) return `<span class="fx-triage fx-triage-dismissed" title="AI: not a complaint">Not a complaint</span>${v.problem ? `<div class="fx-snip">${esc(v.problem)}</div>` : ''}`
+  return `<span class="fx-triage fx-triage-escalate" title="AI: confirmed complaint">${esc(String(v.severity || '').toUpperCase())} ${esc(v.type || '')}</span><div class="fx-snip">${esc(v.problem || '')}</div>${v.sentiment ? `<div class="fx-muted">${esc(v.sentiment)}</div>` : ''}`
+}
+
 // A reference cell: exhibit id, Message-ID as tooltip, clickable to open the
 // source message when it was retained.
 const refCell = (x) => {
@@ -193,12 +201,13 @@ function complaintsSection(r, opts = {}) {
       <td>${esc(c.subject || '(no subject)')}<div class="fx-snip">${esc(c.snippet)}</div><div class="fx-tags">${c.tags.map((t) => `<span class="fx-chip">${esc(t)}</span>`).join(' ')}</div></td>
       <td>${status}</td>
       <td>${triageControl(c.ref, opts)}</td>
+      <td>${aiVerdictCell(c.ref, opts)}</td>
     </tr>`
   }).join('')
   const more = cp.records.length > 300 ? `<p class="fx-muted">Showing 300 of ${n(cp.records.length)} complaints (all are in the export).</p>` : ''
   const summary = `<p class="fx-line"><strong>${n(cp.total)}</strong> complaint message(s) · <strong>${n(cp.uniqueClients)}</strong> client(s) · <strong class="fx-bad-text">${n(cp.unanswered)}</strong> unanswered from external clients · severity ${sevBadge('high')} ${n(cp.bySeverity.high)} ${sevBadge('medium')} ${n(cp.bySeverity.medium)} ${sevBadge('low')} ${n(cp.bySeverity.low)}</p><p class="fx-line">${tagChips}</p>`
   return `<section class="fx-section"><h3>Client complaints</h3>${summary}
-    <table class="fx-table fx-samples"><thead><tr><th>Ref</th><th>Severity</th><th>Date</th><th>Client</th><th>Subject / detail</th><th>Reply</th><th>Triage</th></tr></thead><tbody>${rows}</tbody></table>${more}</section>`
+    <table class="fx-table fx-samples"><thead><tr><th>Ref</th><th>Severity</th><th>Date</th><th>Client</th><th>Subject / detail</th><th>Reply</th><th>Triage</th><th>AI review</th></tr></thead><tbody>${rows}</tbody></table>${more}</section>`
 }
 
 const LBL = { critical: 'Critical', 'at-risk': 'At risk', watch: 'Watch', healthy: 'Healthy' }
@@ -315,6 +324,8 @@ export function buildForensicHtmlDoc(r, fileName, opts = {}) {
   .fx-tags { margin-top: 0.2rem; } .fx-ok { color: #1a7f4b; font-weight: 600; } .fx-bad-text { color: #c2102e; font-weight: 600; }
   .fx-ref { font-family: 'Consolas', monospace; font-size: 0.76rem; color: #555; white-space: nowrap; }
   .fx-triage { display: inline-block; border-radius: 4px; padding: 0 0.4rem; font-size: 0.72rem; font-weight: 700; border: 1px solid #ddd; }
+  .ai-box { border: 1px solid #e3e3e8; border-left: 4px solid #6d28d9; border-radius: 8px; padding: 0.75rem 1rem; margin: 0.75rem 0; background: #faf8ff; }
+  .ai-box h4, .ai-box h5 { margin: 0.4rem 0 0.3rem; color: #4c1d95; } .ai-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; } .ai-summary { font-size: 0.95rem; }
   .fx-triage-reviewed { color: #1a7f4b; } .fx-triage-dismissed { color: #888; } .fx-triage-escalate { color: #c2102e; }
   .fx-lbl { display: inline-block; border-radius: 4px; padding: 0.05rem 0.45rem; font-size: 0.7rem; font-weight: 700; }
   .fx-lbl-healthy { background: #e6f7ee; color: #1a7f4b; } .fx-lbl-watch { background: #fff3d6; color: #9a5b00; }
@@ -326,7 +337,7 @@ export function buildForensicHtmlDoc(r, fileName, opts = {}) {
 </style></head><body>
   <h1>${esc(opts.title || '🔍 Forensic Report')}</h1>
   <p class="fx-sub"><strong>${esc(fileName)}</strong> · generated ${esc(new Date().toLocaleString())} · Timeless Outlook Extractor</p>
-  ${opts.body != null ? opts.body : renderForensicReport(r, { triage: opts.triage })}
+  ${opts.body != null ? opts.body : renderForensicReport(r, { triage: opts.triage, ai: opts.ai })}
   <p class="fx-sub" style="margin-top:2rem">Automated heuristic analysis — findings are indicators for a human reviewer, not conclusions. A Timeless International Product · craftedbytimeless.com</p>
 </body></html>`
 }

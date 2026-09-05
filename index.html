@@ -63,6 +63,7 @@
     <section id="results-screen" hidden>
       <div class="results-bar">
         <div id="file-summary"></div>
+        <button id="ai-settings-btn" class="btn btn-secondary" title="AI deep dive (DeepSeek) — bring your own key">🤖 AI</button>
         <button id="reset-btn" class="btn btn-secondary">Load another file</button>
       </div>
 
@@ -140,6 +141,8 @@
         <div class="toolbar">
           <input type="search" id="forensic-search" placeholder="Search subjects & participants for a keyword…" />
           <button id="forensic-deep-search" class="btn btn-secondary" title="Search inside message bodies for this keyword">Search bodies</button>
+          <button id="forensic-ai-review" class="btn btn-secondary" title="Have DeepSeek read the flagged complaints and confirm or dismiss each">🤖 Review complaints</button>
+          <button id="forensic-ai-apply" class="btn btn-secondary" title="Mark the complaints the AI judged as not-complaints as Dismissed in triage">Apply AI dismissals</button>
           <span class="spacer"></span>
           <span class="export-label">Report:</span>
           <button class="btn" data-export="forensic-pdf">PDF</button>
@@ -153,6 +156,11 @@
           <button class="btn" data-export="audit-csv">Audit CSV</button>
           <button class="btn" data-export="audit-xlsx">Audit Excel</button>
         </div>
+        <div class="toolbar ai-ask">
+          <input type="text" id="ask-input" placeholder="🤖 Ask the mailbox… e.g. which clients complained about late delivery and never got a reply?" />
+          <button id="ask-btn" class="btn">Ask</button>
+        </div>
+        <div id="ask-out" hidden></div>
         <div id="forensic-report"></div>
       </div>
 
@@ -174,6 +182,31 @@
       </div>
     </section>
   </main>
+
+  <!-- AI settings -->
+  <div id="ai-overlay" class="modal-overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ai-title">
+      <h2 id="ai-title">🤖 AI deep dive (DeepSeek)</h2>
+      <p class="fx-muted">Optional. Uses <strong>your own DeepSeek API key</strong>, stored only in this browser. When you use an AI feature, <strong>only the specific emails involved</strong> (one client's thread, the flagged complaints, or the emails matching your question) are sent to DeepSeek — never the whole mailbox. Everything else stays local.</p>
+      <label>API key <input type="password" id="ai-key" placeholder="sk-…" autocomplete="off" /></label>
+      <label>Model
+        <select id="ai-model">
+          <option value="deepseek-chat">deepseek-chat (fast — recommended)</option>
+          <option value="deepseek-reasoner">deepseek-reasoner (slower, deeper reasoning)</option>
+        </select>
+      </label>
+      <label>API base URL <input type="text" id="ai-base" placeholder="https://api.deepseek.com" /></label>
+      <label>Max emails sent per client deep dive <input type="number" id="ai-max" min="5" max="80" /></label>
+      <p id="ai-status" class="fx-muted"></p>
+      <div class="modal-actions">
+        <button id="ai-test" class="btn btn-secondary">Test connection</button>
+        <span class="spacer"></span>
+        <button id="ai-clear" class="btn btn-secondary">Remove key</button>
+        <button id="ai-save" class="btn">Save</button>
+        <button id="ai-close" class="btn btn-secondary">Close</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Message viewer -->
   <div id="viewer-overlay" hidden>

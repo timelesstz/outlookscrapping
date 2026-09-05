@@ -6,8 +6,8 @@
   <title>Timeless Outlook Extractor</title>
   <meta name="description" content="Extract email addresses, messages, and contacts from Outlook PST/OST files — entirely in your browser. No installation, no upload to any server." />
   <link rel="icon" href="data:image/svg+xml,&lt;svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'&gt;&lt;text y='80' font-size='80'&gt;🛡️&lt;/text&gt;&lt;/svg&gt;" />
-  <script type="module" crossorigin src="./assets/index-LqJIYztW.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-DyRWXyJa.css">
+  <script type="module" crossorigin src="./assets/index-Dv6rgyjn.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-BRSRN98E.css">
 </head>
 <body>
   <canvas id="cyber-bg" aria-hidden="true"></canvas>
@@ -141,6 +141,7 @@
       <div id="tab-forensic" class="tab-panel" hidden>
         <div class="toolbar">
           <input type="search" id="forensic-search" placeholder="Search subjects & participants for a keyword…" />
+          <button id="forensic-deep-search" class="btn btn-secondary" title="Search inside message bodies for this keyword">Search bodies</button>
           <span class="spacer"></span>
           <span class="export-label">Report:</span>
           <button class="btn" data-export="forensic-pdf">PDF</button>
@@ -191,6 +192,7 @@
           <button id="viewer-close" class="btn btn-secondary" aria-label="Close">✕</button>
         </div>
       </div>
+      <div id="viewer-attachments" class="viewer-attachments" hidden></div>
       <div id="viewer-body-wrap">
         <pre id="viewer-body-text" hidden></pre>
         <iframe id="viewer-body-html" sandbox="" title="Message body" hidden></iframe>

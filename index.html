@@ -54,6 +54,7 @@
         <p id="parse-message">Reading file…</p>
       </div>
       <p id="upload-error" class="error" hidden></p>
+      <div id="resume-panel" class="resume-panel" hidden></div>
       <div class="notes">
         <p><span class="ok">▸</span> Works with Outlook data files (PST) and offline files (OST), ANSI or Unicode.</p>
         <p><span class="ok">▸</span> No upload limit — even 50–100&nbsp;GB files work. They're streamed and read locally in slices, never uploaded.</p>
@@ -64,8 +65,11 @@
     <section id="results-screen" hidden>
       <div class="results-bar">
         <div id="file-summary"></div>
+        <div id="add-status" class="add-status" hidden></div>
+        <button id="add-file-btn" class="btn btn-secondary" title="Scan another mailbox into the same combined view">➕ Add mailbox</button>
         <button id="ai-settings-btn" class="btn btn-secondary" title="AI deep dive (DeepSeek) — bring your own key">🤖 AI</button>
         <button id="reset-btn" class="btn btn-secondary">Load another file</button>
+        <input type="file" id="add-file-input" accept=".pst,.ost" hidden />
       </div>
 
       <nav class="tabs" role="tablist">

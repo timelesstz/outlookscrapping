@@ -5,6 +5,7 @@ import { renderForensicReport, buildForensicHtmlDoc, TRIAGE_TEXT, findingKey, wi
 import { renderClientsView, renderCaseFile, filterClients, renderAiDive, renderStaffView } from './clients-render.js'
 import { getAiSettings, saveAiSettings, clearAiKey, aiEnabled, setSessionKey, deepseekChat, deepDivePrompt, complaintsReviewPrompt, executiveSummaryPrompt, askPrompt, textOf, keywordsOf } from './ai.js'
 import { loadVaultFile, decryptVault, encryptVault, generatePassphrase } from './vault.js'
+import { saveAnalysis, listAnalyses, loadAnalysis, deleteAnalysis, signatureOf } from './storage.js'
 
 const $ = (sel) => document.querySelector(sel)
 
@@ -28,6 +29,10 @@ const state = {
   viewerMessage: null,
   clientQuery: '',
   selectedClient: null,
+  sources: [],
+  adding: false,
+  hasSession: false,
+  resumed: false,
   ai: { dive: {}, complaints: {}, exec: null },
   vault: null,
   period: null,
@@ -58,8 +63,12 @@ worker.onmessage = (e) => {
   const data = e.data
   switch (data.type) {
     case 'progress':
-      $('#parse-message').textContent =
-        `Extracting… ${data.items.toLocaleString()} items from ${data.folders} folders (${data.currentFolder})`
+      if (state.adding) {
+        $('#add-status').innerHTML = `<span class="spinner-inline"></span> Scanning ${escapeHtml(state.addingName || 'mailbox')}… ${data.items.toLocaleString()} items`
+      } else {
+        $('#parse-message').textContent =
+          `Extracting… ${data.items.toLocaleString()} items from ${data.folders} folders (${data.currentFolder})`
+      }
       break
     case 'parsed':
       onParsed(data)
@@ -87,6 +96,11 @@ worker.onmessage = (e) => {
       if (pending) {
         pendingRequests.delete(data.reqId)
         pending.reject(new Error(data.message))
+      } else if (state.adding) {
+        state.adding = false
+        $('#add-status').hidden = true
+        $('#add-file-btn').disabled = false
+        alert(`Could not scan that mailbox: ${data.message}`)
       } else {
         // A parse-time failure. If it was a locked-file read, show the same
         // actionable guidance as the up-front probe; otherwise surface the message.
@@ -107,6 +121,7 @@ worker.onerror = (e) => {
 const dropZone = $('#drop-zone')
 const fileInput = $('#file-input')
 try { $('#scope-domains').value = localStorage.getItem('tox-our-domains') || '' } catch { /* storage */ }
+renderResumePanel()
 
 dropZone.addEventListener('click', () => fileInput.click())
 dropZone.addEventListener('keydown', (e) => {
@@ -151,6 +166,8 @@ async function loadFile(file) {
   state.scope = scope
   state.fileName = file.name
   state.fileSize = file.size
+  state.fileHandles = { [file.name]: file }
+  state.sources = [file.name]
   dropZone.hidden = true
   $('#scope-select').hidden = true
   $('#parse-status').hidden = false
@@ -173,7 +190,8 @@ async function loadFile(file) {
       return
     }
   }
-  worker.postMessage({ type: 'parse', file, scope })
+  state.hasSession = true
+  worker.postMessage({ type: 'parse', file, scope, sourceName: file.name })
 }
 
 function showFileReadError(fileName, err) {
@@ -206,6 +224,103 @@ function showUploadError(message, isHtml = false) {
 
 $('#reset-btn').addEventListener('click', () => window.location.reload())
 
+// --- Save / resume (IndexedDB, local) --------------------------------------
+async function persistAnalysis() {
+  if (!state.hasSession || !state.sources.length) return
+  const sig = signatureOf(state.sources)
+  const record = {
+    signature: sig, savedAt: Date.now(), sources: state.sources.slice(), scope: state.scope,
+    fileName: state.fileName,
+    counts: { messages: state.totalMessages, addresses: state.addresses.length, clients: state.forensic?.clients?.total || 0 },
+    data: {
+      folders: state.folders, messages: state.messages, contacts: state.contacts,
+      addresses: state.addresses, forensic: state.forensic,
+      totalMessages: state.totalMessages, messagesTruncated: state.messagesTruncated,
+    },
+  }
+  await saveAnalysis(record)
+}
+
+async function renderResumePanel() {
+  const host = $('#resume-panel')
+  if (!host) return
+  const items = await listAnalyses()
+  if (!items.length) { host.hidden = true; host.innerHTML = ''; return }
+  host.hidden = false
+  host.innerHTML = `<h3 class="resume-title">Resume a saved analysis</h3>
+    <p class="fx-muted">Stored on this device only. Opens instantly; re-attach the file to read message bodies, download attachments or run AI.</p>
+    <div class="resume-list">${items.map((a) => `
+      <div class="resume-item">
+        <div><strong>${escapeHtml(a.sources && a.sources.length > 1 ? `${a.sources.length} mailboxes` : (a.fileName || a.signature))}</strong>
+          <div class="fx-muted">${escapeHtml((a.sources || []).join(', '))}</div>
+          <div class="fx-muted">${a.counts ? `${(a.counts.messages || 0).toLocaleString()} messages · ${(a.counts.clients || 0).toLocaleString()} clients` : ''} · saved ${new Date(a.savedAt).toLocaleString()}</div>
+        </div>
+        <div class="resume-actions">
+          <button class="btn" data-resume="${escapeHtml(a.signature)}">Resume</button>
+          <button class="btn btn-secondary" data-resume-del="${escapeHtml(a.signature)}" title="Delete this saved analysis">✕</button>
+        </div>
+      </div>`).join('')}</div>`
+}
+
+$('#resume-panel').addEventListener('click', async (e) => {
+  const del = e.target.closest('[data-resume-del]')
+  if (del) { await deleteAnalysis(del.dataset.resumeDel); renderResumePanel(); return }
+  const btn = e.target.closest('[data-resume]')
+  if (!btn) return
+  const rec = await loadAnalysis(btn.dataset.resume)
+  if (!rec) { alert('Could not load that saved analysis.'); renderResumePanel(); return }
+  resumeAnalysis(rec)
+})
+
+function resumeAnalysis(rec) {
+  state.scope = rec.scope || { addresses: true, messages: true, contacts: true }
+  state.fileName = rec.fileName || (rec.sources && rec.sources[0]) || 'analysis'
+  state.hasSession = false
+  state.resumed = true
+  onParsed({ ...rec.data, sources: rec.sources })
+  showReattachBanner()
+}
+
+function showReattachBanner() {
+  let b = $('#reattach-banner')
+  if (!b) {
+    b = document.createElement('div')
+    b.id = 'reattach-banner'
+    b.className = 'notice'
+    $('#results-screen').prepend(b)
+  }
+  b.hidden = false
+  b.innerHTML = `Resumed from saved analysis — all tables, the report and exports are ready. To read a message body, download an attachment or run AI, re-attach the file: <button id="reattach-btn" class="btn btn-secondary">Re-attach mailbox</button>`
+  $('#reattach-btn').addEventListener('click', () => { state.reattaching = true; fileInput.click() })
+}
+
+// A live worker session is required for bodies/attachments/AI. Guard nicely.
+function requireSession(what) {
+  if (state.hasSession) return true
+  alert(`${what} needs the mailbox file. Click "Re-attach mailbox" (or "Load another file") and pick ${state.sources.length > 1 ? 'the same files' : 'the same file'} to continue.`)
+  return false
+}
+
+// Add another mailbox into the combined view (same scope as the first load).
+const addFileInput = $('#add-file-input')
+$('#add-file-btn').addEventListener('click', () => addFileInput.click())
+addFileInput.addEventListener('change', () => { if (addFileInput.files[0]) addMailbox(addFileInput.files[0]); addFileInput.value = '' })
+
+async function addMailbox(file) {
+  if (!/\.(pst|ost)$/i.test(file.name)) { alert('Please choose a .pst or .ost file.'); return }
+  if (state.sources.includes(file.name)) { if (!confirm(`"${file.name}" looks already added. Add it again anyway?`)) return }
+  try { await file.slice(0, 4).arrayBuffer() } catch (err) { showFileReadError(file.name, err); $('#upload-screen').hidden = false; $('#results-screen').hidden = true; return }
+  state.adding = true
+  state.hasSession = true
+  state.addingName = file.name
+  state.fileHandles = state.fileHandles || {}
+  state.fileHandles[file.name] = file
+  $('#add-status').hidden = false
+  $('#add-status').innerHTML = `<span class="spinner-inline"></span> Opening ${escapeHtml(file.name)} (${formatBytes(file.size)})…`
+  $('#add-file-btn').disabled = true
+  worker.postMessage({ type: 'addfile', file, sourceName: file.name })
+}
+
 // ---------------------------------------------------------------------------
 // Results
 // ---------------------------------------------------------------------------
@@ -215,6 +330,7 @@ function onParsed(data) {
   state.contacts = data.contacts
   state.addresses = data.addresses
   state.forensic = data.forensic || null
+  state.sources = data.sources || (state.fileName ? [state.fileName] : [])
   state.totalMessages = data.totalMessages ?? data.messages.length
   state.messagesTruncated = !!data.messagesTruncated
   state.selectedFolderId = null
@@ -229,9 +345,12 @@ function onParsed(data) {
   if (scope.addresses) summaryParts.push(`${state.addresses.length.toLocaleString()} unique addresses`)
   if (scope.messages) summaryParts.push(`${state.totalMessages.toLocaleString()} messages`)
   if (scope.contacts) summaryParts.push(`${state.contacts.length.toLocaleString()} contacts`)
-  $('#file-summary').innerHTML =
-    `<strong>${escapeHtml(state.fileName)}</strong> — ` +
-    `${summaryParts.join(', ')} in ${state.folders.length} folders`
+  const label = state.sources.length > 1
+    ? `<strong>${state.sources.length} mailboxes</strong> <span class="fx-muted">(${state.sources.map((s) => escapeHtml(s)).join(', ')})</span>`
+    : `<strong>${escapeHtml(state.fileName)}</strong>`
+  $('#file-summary').innerHTML = `${label} — ${summaryParts.join(', ')} in ${state.folders.length} folders`
+  $('#add-status').hidden = true
+  state.adding = false
   $('#count-addresses').textContent = state.addresses.length.toLocaleString()
   $('#count-messages').textContent = state.totalMessages.toLocaleString()
   $('#count-contacts').textContent = state.contacts.length.toLocaleString()
@@ -261,6 +380,8 @@ function onParsed(data) {
   renderFolderTree()
   renderMessages()
   renderContacts()
+  $('#add-file-btn').disabled = false
+  persistAnalysis()
 }
 
 // Tabs
@@ -426,6 +547,7 @@ $('#message-table tbody').addEventListener('click', (e) => {
 async function openViewer(id) {
   const meta = state.messages[id]
   if (!meta) return
+  if (!state.hasSession) { requireSession('Reading a message'); return }
   state.viewerMessage = { meta, detail: null }
   $('#viewer-subject').textContent = meta.subject || '(no subject)'
   $('#viewer-from').textContent = `From: ${meta.senderName}${meta.senderEmail ? ` <${meta.senderEmail}>` : ''}`
@@ -588,6 +710,7 @@ $('#forensic-report').addEventListener('input', (e) => {
 // Deep (body) keyword search — runs in the worker over retained messages
 // ---------------------------------------------------------------------------
 $('#forensic-deep-search').addEventListener('click', async () => {
+  if (!requireSession('Body search')) return
   const q = $('#forensic-search').value.trim()
   const el = $('#forensic-search-results')
   if (!el) return
@@ -936,7 +1059,7 @@ function aiSheets(c) {
 $('#tab-clients').addEventListener('click', async (e) => {
   if (!e.target.closest('#case-ai')) return
   const c = selectedClientObj()
-  if (!c || !requireAi()) return
+  if (!c || !requireSession('AI deep dive') || !requireAi()) return
   const out = $('#case-ai-out')
   const btn = $('#case-ai')
   btn.disabled = true
@@ -966,7 +1089,7 @@ $('#tab-clients').addEventListener('click', async (e) => {
 
 // 2) AI review of the keyword-flagged complaints — confirms or dismisses each.
 $('#forensic-ai-review').addEventListener('click', async () => {
-  if (!requireAi()) return
+  if (!requireSession('AI review') || !requireAi()) return
   const records = (state.forensic?.complaints?.records || []).filter((c) => c.id != null)
   if (!records.length) return alert('No flagged complaints with readable bodies. Load with "Messages" ticked so bodies can be read.')
   const MAX = 200
@@ -1025,7 +1148,7 @@ $('#period-clear').addEventListener('click', () => { $('#period-from').value = '
 
 // 2b) AI executive summary across all clients.
 $('#forensic-ai-exec').addEventListener('click', async () => {
-  if (!state.forensic || !requireAi()) return
+  if (!state.forensic || !requireSession('Executive summary') || !requireAi()) return
   const btn = $('#forensic-ai-exec')
   const original = btn.textContent
   btn.disabled = true
@@ -1050,7 +1173,7 @@ $('#forensic-ai-exec').addEventListener('click', async () => {
 async function askMailbox() {
   const q = $('#ask-input').value.trim()
   const out = $('#ask-out')
-  if (!q || !requireAi()) return
+  if (!q || !requireSession('Ask the mailbox') || !requireAi()) return
   if (!state.messages.length) {
     out.hidden = false
     out.innerHTML = '<div class="ai-box">Asking needs the message list — re-run with <em>Messages</em> ticked.</div>'

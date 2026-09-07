@@ -126,12 +126,13 @@ const MAX_RETAINED_MESSAGES = 100000
  */
 export class PstSession {
   #messageRefs = []
+  #sources = []
 
   constructor(source) {
     this.pstFile = openPstFile(source)
   }
 
-  parse(onProgress = () => {}, scope) {
+  parse(onProgress = () => {}, scope, sourceName = '') {
     this.#scope = {
       addresses: scope ? scope.addresses !== false : true,
       messages: scope ? scope.messages !== false : true,
@@ -150,8 +151,26 @@ export class PstSession {
     this.#progress = onProgress
     this.#processed = 0
 
+    this.#sources = []
     this.#walk(this.pstFile.getRootFolder(), '', null, 'other')
+    this.#sources.push(sourceName)
+    return this.#result()
+  }
 
+  /** Walk another mailbox into the SAME accumulators (combined view). */
+  addFile(source, onProgress = () => {}, sourceName = '') {
+    if (!this.#forensic && !this.#scope) throw new Error('Call parse() before addFile()')
+    this.#progress = onProgress
+    const pst = openPstFile(source)
+    const startFolder = this.folders.length
+    this.#walk(pst.getRootFolder(), '', null, 'other')
+    // Tag the newly-added folders with their source so the folder tree can label them.
+    for (let i = startFolder; i < this.folders.length; i++) this.folders[i].source = this.#sources.length
+    this.#sources.push(sourceName)
+    return this.#result()
+  }
+
+  #result() {
     return {
       folders: this.folders,
       messages: this.messages,
@@ -161,6 +180,7 @@ export class PstSession {
       totalMessages: this.totalMessages,
       messagesTruncated: this.messagesTruncated,
       retainedMessages: this.messages.length,
+      sources: this.#sources.slice(),
     }
   }
 
@@ -382,6 +402,7 @@ export class PstSession {
       isRead,
     })
     this.#messageRefs[id] = msg
+    this.messages[id].source = this.#sources.length
     this.folders[folderId].messageCount++
   }
 

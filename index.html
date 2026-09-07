@@ -6,8 +6,8 @@
   <title>Timeless Outlook Extractor</title>
   <meta name="description" content="Extract email addresses, messages, and contacts from Outlook PST/OST files — entirely in your browser. No installation, no upload to any server." />
   <link rel="icon" href="data:image/svg+xml,&lt;svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'&gt;&lt;text y='80' font-size='80'&gt;🛡️&lt;/text&gt;&lt;/svg&gt;" />
-  <script type="module" crossorigin src="./assets/index-BWMlp6bJ.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-BYTpIKrs.css">
+  <script type="module" crossorigin src="./assets/index-BofImwwZ.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-CGyRulrQ.css">
 </head>
 <body>
   <canvas id="cyber-bg" aria-hidden="true"></canvas>
@@ -48,6 +48,7 @@
         <label class="scope-opt"><input type="checkbox" id="scope-contacts" checked /><span>Contacts</span></label>
         <label class="scope-opt"><input type="checkbox" id="scope-forensic" /><span>🔍 Forensic report</span></label>
         <label class="scope-opt scope-sub"><input type="checkbox" id="scope-deepscan" /><span>Deep content scan (reads bodies — slower)</span></label>
+        <label class="scope-opt scope-domains" title="Your own email domain(s). Everyone else is treated as a client."><span>Our domain(s):</span><input type="text" id="scope-domains" placeholder="e.g. mycompany.co.tz, mycompany.com" autocomplete="off" /></label>
         <p class="scope-hint">Pick only what you need — fewer categories load faster and use far less memory on large files. The forensic report scans every folder (Inbox, Sent, Drafts, Deleted…) and flags complaints, legal/financial/security signals, risky attachments and anomalies. Deep scan also searches message bodies.</p>
       </fieldset>
       <div id="parse-status" hidden>

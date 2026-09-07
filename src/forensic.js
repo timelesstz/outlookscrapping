@@ -112,6 +112,13 @@ const FIN_STATUS = [
 ]
 const MAX_FIN_RECORDS = 2000
 
+// Systemic-problem themes: recurring words/phrases across complaints from
+// different clients. Stopwords are skipped; generic words only count inside
+// two-word phrases.
+const STOP_WORDS = new Set(('the a an and or of to in on for with about from by at is are was were be been being this that these those which who whom whose what when where why how did do does done any all some not no yes but if then than so as it its it\'s we our ours you your yours they them their he she his her i me my mine us can could should would will shall may might must have has had having get got also just like very much more most less least only even still again ever never here there now then today yesterday tomorrow week weeks month months year years day days re fw fwd cc bcc please kindly thanks thank regards dear hello hi hey sir madam subject sent date time email emails mail mails message messages attached attachment attachments information info update updates below above re: fwd: kwa na ya wa za la cha vya ni si kwamba hii hili hilo hizi hizo huyu huyo hawa sana tafadhali asante habari ndugu mpendwa kuhusu katika lakini pia bado hapa hapo pale mimi wewe yeye sisi ninyi wao yangu yako yake yetu yenu yao kama ili kwenye tena baada kabla').split(' '))
+const GENERIC_WORDS = new Set('issue issues problem problems request requests regarding following order orders service services customer client clients company team office call phone reply response respond number account matter case item items thing things way help need needed want'.split(' '))
+const MAX_THEME_REFS = 6
+
 // Explicit approval / sign-off language (governance signal).
 const APPROVAL_RE = /\b(approv\w*|authoris\w*|authoriz\w*|sign(?:ed)? off|sign-off|go ahead|greenlight|green light|proceed with|confirm(?:ed)? the (?:order|payment|purchase))\b/i
 
@@ -499,11 +506,13 @@ export class ForensicCollector {
     const audit = this.#buildAudit(complaints)
     const { clients, staff, trends } = this.#buildClients(internal)
     const financial = this.#buildFinancial(internal)
+    const themes = this.#buildThemes(internal, complaints)
     return {
       clients,
       staff,
       trends,
       financial,
+      themes,
       ourDomains: ours,
       primaryDomain,
       deepScan: this.deepScan,
@@ -759,6 +768,69 @@ export class ForensicCollector {
       .sort((a, b) => (b.overdue + b.disputed + b.unpaid) - (a.overdue + a.disputed + a.unpaid) || b.records - a.records)
       .slice(0, 300)
     return { records: this.financialRecords, total: this.financialTotal, totals, overdue, disputed, unpaid, clients }
+  }
+
+  // Systemic problems: what keeps coming up, across how many clients.
+  #buildThemes(internal, complaints) {
+    const recs = complaints.records.filter((c) => c.external)
+    const clientsWith = new Set(recs.map((c) => c.client).filter(Boolean))
+    // By complaint type.
+    const byType = new Map()
+    for (const c of recs) {
+      for (const tag of c.tags) {
+        let t = byType.get(tag)
+        if (!t) { t = { tag, messages: 0, clients: new Set(), escalated: 0, high: 0, refs: [] }; byType.set(tag, t) }
+        t.messages++
+        if (c.client) t.clients.add(c.client)
+        if (c.escalated) t.escalated++
+        if (c.severity === 'high') t.high++
+        if (t.refs.length < MAX_THEME_REFS) t.refs.push({ ref: c.ref, id: c.id, messageId: c.messageId, subject: c.subject, client: c.client })
+      }
+    }
+    // Recurring words / phrases (counted once per message, ranked by distinct clients).
+    const terms = new Map()
+    for (const c of recs) {
+      const text = `${c.subject || ''} ${c.snippet || ''}`.toLowerCase()
+      const toks = (text.match(/[a-z][a-z'-]{2,}/g) || []).filter((w) => !STOP_WORDS.has(w))
+      const seen = new Set()
+      for (let i = 0; i < toks.length; i++) {
+        if (!GENERIC_WORDS.has(toks[i]) && toks[i].length >= 4) seen.add(toks[i])
+        if (i + 1 < toks.length && (!GENERIC_WORDS.has(toks[i]) || !GENERIC_WORDS.has(toks[i + 1]))) seen.add(`${toks[i]} ${toks[i + 1]}`)
+      }
+      for (const term of seen) {
+        let t = terms.get(term)
+        if (!t) { t = { term, messages: 0, clients: new Set(), refs: [] }; terms.set(term, t) }
+        t.messages++
+        if (c.client) t.clients.add(c.client)
+        if (t.refs.length < MAX_THEME_REFS) t.refs.push({ ref: c.ref, id: c.id, messageId: c.messageId, subject: c.subject, client: c.client })
+      }
+    }
+    const topics = [...terms.values()]
+      .filter((t) => t.clients.size >= 2 || t.messages >= 3)
+      .sort((a, b) => b.clients.size - a.clients.size || b.messages - a.messages || b.term.length - a.term.length)
+      .slice(0, 25)
+      .map((t) => ({ term: t.term, messages: t.messages, clients: t.clients.size, refs: t.refs }))
+    // Recurring subjects (same conversation topic complained about more than once).
+    const threads = new Map()
+    for (const c of recs) {
+      if (!c.thread) continue
+      let t = threads.get(c.thread)
+      if (!t) { t = { topic: c.subject || c.thread, messages: 0, clients: new Set(), refs: [] }; threads.set(c.thread, t) }
+      t.messages++
+      if (c.client) t.clients.add(c.client)
+      if (t.refs.length < MAX_THEME_REFS) t.refs.push({ ref: c.ref, id: c.id, messageId: c.messageId, subject: c.subject, client: c.client })
+    }
+    const recurring = [...threads.values()].filter((t) => t.messages >= 2)
+      .sort((a, b) => b.messages - a.messages || b.clients.size - a.clients.size).slice(0, 15)
+      .map((t) => ({ topic: t.topic, messages: t.messages, clients: t.clients.size, refs: t.refs }))
+    return {
+      total: recs.length,
+      clientsWithComplaints: clientsWith.size,
+      byType: [...byType.values()].sort((a, b) => b.clients.size - a.clients.size || b.messages - a.messages)
+        .map((t) => ({ tag: t.tag, messages: t.messages, clients: t.clients.size, escalated: t.escalated, high: t.high, refs: t.refs })),
+      topics,
+      recurring,
+    }
   }
 
   // Assemble an auditor's findings register, most-severe first.

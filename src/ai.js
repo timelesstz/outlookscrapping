@@ -142,6 +142,51 @@ TASK: Investigate this client relationship. Respond with a JSON object with exac
 Use only refs that appear above. Respond with JSON only.`
 }
 
+export function executiveSummaryPrompt(r, complaints, opts = {}) {
+  const n = (v) => (typeof v === 'number' ? v : 0)
+  const top = (r.clients?.list || []).slice(0, 12).map((c) => `- ${c.name || c.email} <${c.email}> (${c.domain}): ${c.label}, score ${c.score}, ${n(c.inbound)} in / ${n(c.outbound)} out, unanswered ${n(c.unanswered)}, complaints H/M/L ${c.complaints.high}/${c.complaints.medium}/${c.complaints.low}, escalated ${n(c.escalated)}, financial ${n(c.financial)}, BEC ${n(c.bec)}`).join('\n') || '(none)'
+  const byType = (r.themes?.byType || []).map((t) => `- ${t.tag}: ${t.messages} complaint(s) across ${t.clients} client(s), ${t.escalated} escalated`).join('\n') || '(none)'
+  const topics = (r.themes?.topics || []).slice(0, 15).map((t) => `- "${t.term}": ${t.clients} client(s), ${t.messages} message(s), e.g. ${t.refs.slice(0, 3).map((x) => `[${x.ref}]`).join(' ')}`).join('\n') || '(none)'
+  const fin = r.financial ? `${n(r.financial.total)} money-related messages; overdue ${n(r.financial.overdue)}, disputed ${n(r.financial.disputed)}, unpaid ${n(r.financial.unpaid)}; amounts mentioned: ${Object.entries(r.financial.totals || {}).map(([k, v]) => `${k} ${Math.round(v).toLocaleString()}`).join(', ') || 'none'}` : 'n/a'
+  const finClients = (r.financial?.clients || []).slice(0, 8).map((c) => `- ${c.name || c.client}: ${c.records} msgs, overdue ${c.overdue}, disputed ${c.disputed}, unpaid ${c.unpaid}, amounts ${Object.entries(c.amounts).map(([k, v]) => `${k} ${Math.round(v).toLocaleString()}`).join(', ') || 'n/a'}${c.invoices.length ? `, invoices ${c.invoices.slice(0, 4).join(', ')}` : ''}`).join('\n') || '(none)'
+  const staff = (r.staff?.list || []).slice(0, 8).map((s) => `- ${s.name || s.email}: ${s.sent} replies, ${s.clients} clients, answered ${s.answered}, unanswered(owned) ${s.unanswered}, median response ${s.medianResponseHours ?? 'n/a'} h`).join('\n') || '(none)'
+  const audit = (r.audit?.findings || []).map((f) => `- [${f.severity}] ${f.title}`).join('\n') || '(none)'
+  const cmp = complaints.slice(0, 40).map((c) => `[${c.ref}] ${c.date ? new Date(c.date).toISOString().slice(0, 10) : 'undated'} ${c.severity.toUpperCase()} ${c.tags.join('/')} from ${c.client || c.clientName || '?'}${c.responded ? '' : ' (NO REPLY)'} — ${c.subject} — ${c.snippet}`).join('\n') || '(none)'
+  return `MAILBOX: ${opts.fileName || ''} · ${n(r.total)} messages (${n(r.received)} received, ${n(r.sent)} sent), ${r.dateRange?.min ? new Date(r.dateRange.min).toISOString().slice(0, 10) : '?'} → ${r.dateRange?.max ? new Date(r.dateRange.max).toISOString().slice(0, 10) : '?'}. Our domains: ${(r.ourDomains || []).join(', ') || r.primaryDomain || 'unknown'}.
+CLIENTS: ${n(r.clients?.total)} external clients, ${n(r.clients?.atRisk)} need attention, ${n(r.clients?.unansweredTotal)} unanswered client messages, median response ${r.clients?.medianResponseHours ?? 'n/a'} h.
+
+TOP CLIENTS NEEDING ATTENTION:
+${top}
+
+COMPLAINTS BY TYPE (keyword-detected, ${n(r.themes?.total)} from ${n(r.themes?.clientsWithComplaints)} clients):
+${byType}
+
+RECURRING THEMES ACROSS CLIENTS:
+${topics}
+
+FINANCIAL: ${fin}
+${finClients}
+
+STAFF RESPONSIVENESS:
+${staff}
+
+AUDIT FINDINGS:
+${audit}
+
+SAMPLE COMPLAINTS (refs cite the source email):
+${cmp}
+
+TASK: You are briefing the managing director. Identify what is really going on across all clients. Respond with a JSON object:
+"overview": string (4-8 sentences, plain language, the state of client relationships and the money),
+"systemicIssues": array of {"issue": string, "clientsAffected": number, "severity": "low|medium|high", "evidence": array of refs, "recommendation": string} — recurring problems, most damaging first,
+"financialExposure": {"summary": string, "amountsAtRisk": string, "evidence": array of refs},
+"attentionGaps": {"summary": string, "worstCases": array of strings (client + why), "evidence": array of refs},
+"topClientsToActOn": array of {"client": string, "why": string, "action": string},
+"recommendations": array of strings (prioritised, concrete),
+"confidence": "low|medium|high".
+Use only refs that appear above. Respond with JSON only.`
+}
+
 export function complaintsReviewPrompt(items) {
   const list = items.map((c) => `[${c.ref}] ${when(c.date)} From: ${c.client || c.clientName || ''}\nSubject: ${c.subject || '(no subject)'}\nKeyword match: ${c.snippet}\nBody: ${clip(c.text || '', 900)}\n---`).join('\n')
   return `Below are emails that a keyword scanner flagged as possible client complaints. Review each one.

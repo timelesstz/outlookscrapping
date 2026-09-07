@@ -211,6 +211,67 @@ function complaintsSection(r, opts = {}) {
     <table class="fx-table fx-samples"><thead><tr><th>Ref</th><th>Severity</th><th>Date</th><th>Client</th><th>Subject / detail</th><th>Reply</th><th>Triage</th><th>AI review</th></tr></thead><tbody>${rows}</tbody></table>${more}</section>`
 }
 
+function themesSection(r) {
+  const th = r.themes
+  if (!th) return ''
+  if (!th.total) return `<section class="fx-section"><h3>Systemic problems</h3><p class="fx-muted">No client complaints detected, so no recurring problems to report.</p></section>`
+  const refs = (list) => list.slice(0, 4).map((x) => (x.id != null ? `<span class="fx-ref fx-ref-link" data-open-msg="${x.id}" title="${esc(x.client || '')}">${esc(x.ref)}</span>` : `<span class="fx-ref">${esc(x.ref)}</span>`)).join(' ')
+  const maxC = Math.max(1, ...th.byType.map((t) => t.clients))
+  const types = th.byType.map((t) => `<tr><td><strong>${esc(t.tag)}</strong></td><td class="num">${n(t.messages)}</td><td class="num">${n(t.clients)}</td><td class="num ${t.escalated ? 'fx-bad-text' : ''}">${n(t.escalated)}</td><td class="num">${n(t.high)}</td><td class="fx-bar-cell"><span class="fx-bar" style="width:${pct(t.clients, maxC)}%"></span></td><td>${refs(t.refs)}</td></tr>`).join('')
+  const topics = th.topics.map((t) => `<tr><td><strong>${esc(t.term)}</strong></td><td class="num">${n(t.clients)}</td><td class="num">${n(t.messages)}</td><td>${refs(t.refs)}</td></tr>`).join('')
+  const rec = th.recurring.map((t) => `<tr><td class="fx-ellip">${esc(t.topic)}</td><td class="num">${n(t.messages)}</td><td class="num">${n(t.clients)}</td><td>${refs(t.refs)}</td></tr>`).join('')
+  return `<section class="fx-section"><h3>Systemic problems</h3>
+    <p class="fx-line"><strong>${n(th.total)}</strong> client complaint(s) from <strong>${n(th.clientsWithComplaints)}</strong> client(s). What keeps coming up — ranked by how many different clients raise it.</p>
+    <h4>By type</h4><table class="fx-table fx-samples"><thead><tr><th>Type</th><th>Complaints</th><th>Clients affected</th><th>Escalated</th><th>High</th><th>Reach</th><th>Examples</th></tr></thead><tbody>${types}</tbody></table>
+    ${topics ? `<h4>Recurring themes</h4><table class="fx-table fx-samples"><thead><tr><th>Theme</th><th>Clients</th><th>Messages</th><th>Examples</th></tr></thead><tbody>${topics}</tbody></table>` : ''}
+    ${rec ? `<h4>Subjects complained about repeatedly</h4><table class="fx-table fx-samples"><thead><tr><th>Subject</th><th>Complaints</th><th>Clients</th><th>Examples</th></tr></thead><tbody>${rec}</tbody></table>` : ''}
+  </section>`
+}
+
+/** AI executive summary (stored {data, text, model, when, usage}). */
+export function execSection(ex, { print = false } = {}) {
+  if (!ex) return ''
+  if (ex.error) return `<section class="fx-section"><div class="ai-box ai-error"><strong>AI executive summary failed:</strong> ${esc(ex.error)}</div></section>`
+  const d = ex.data
+  const meta = `${esc(ex.model || '')}${ex.when ? ` · ${esc(new Date(ex.when).toLocaleString())}` : ''}${ex.usage ? ` · ${n(ex.usage.total_tokens)} tokens` : ''}${d && d.confidence ? ` · confidence ${esc(d.confidence)}` : ''}`
+  if (!d) return `<section class="fx-section"><div class="ai-box"><div class="ai-head"><h4>🤖 Executive summary</h4><span class="fx-muted">${meta}</span></div><pre class="ai-raw">${esc(ex.text || '')}</pre></div></section>`
+  const refs = (s) => (print ? esc(s) : esc(s).replace(/\[(M\d{6})\]/g, (_, r) => `[<span class="fx-ref fx-ref-link" data-open-ref="${r}">${r}</span>]`))
+  const refList = (arr) => (arr && arr.length ? ` <span class="fx-muted">${arr.map((r) => refs(`[${r}]`)).join(' ')}</span>` : '')
+  const sevB = (s) => `<span class="fx-sev fx-sev-${s === 'high' || s === 'medium' ? s : 'low'}">${esc(String(s || '').toUpperCase())}</span>`
+  const li = (arr, fn) => (arr && arr.length ? `<ul>${arr.map(fn).join('')}</ul>` : '<p class="fx-muted">None identified.</p>')
+  return `<section class="fx-section"><div class="ai-box">
+    <div class="ai-head"><h4>🤖 Executive summary</h4><span class="fx-muted">${meta}</span></div>
+    <p class="ai-summary">${refs(d.overview || '')}</p>
+    <h5>Systemic issues</h5>${li(d.systemicIssues, (s) => `<li>${sevB(s.severity)} <strong>${refs(s.issue || '')}</strong> — ${n(s.clientsAffected)} client(s).${refList(s.evidence)}<div class="fx-snip">→ ${refs(s.recommendation || '')}</div></li>`)}
+    <div class="ai-grid">
+      <div><h5>Financial exposure</h5><p>${refs(d.financialExposure?.summary || '')}</p>${d.financialExposure?.amountsAtRisk ? `<p><strong>At risk:</strong> ${esc(d.financialExposure.amountsAtRisk)}</p>` : ''}${refList(d.financialExposure?.evidence)}</div>
+      <div><h5>Attention gaps</h5><p>${refs(d.attentionGaps?.summary || '')}</p>${li(d.attentionGaps?.worstCases, (w) => `<li>${refs(w)}</li>`)}${refList(d.attentionGaps?.evidence)}</div>
+    </div>
+    <h5>Clients to act on now</h5>${li(d.topClientsToActOn, (c) => `<li><strong>${esc(c.client || '')}</strong> — ${refs(c.why || '')}<div class="fx-snip">→ ${refs(c.action || '')}</div></li>`)}
+    <h5>Recommendations</h5>${li(d.recommendations, (x) => `<li>${refs(x)}</li>`)}
+  </div></section>`
+}
+
+/** Restrict complaints, financial register and trends to a period {from,to} (ms). */
+export function withPeriod(r, p) {
+  if (!r || !p || (!p.from && !p.to)) return r
+  const inP = (d) => d != null && (!p.from || d >= p.from) && (!p.to || d <= p.to)
+  const months = (r.trends?.months || []).filter((m) => {
+    const [y, mo] = m.split('-').map(Number)
+    const start = new Date(y, mo - 1, 1).getTime()
+    const end = new Date(y, mo, 0, 23, 59, 59).getTime()
+    return (!p.from || end >= p.from) && (!p.to || start <= p.to)
+  })
+  return {
+    ...r,
+    period: p,
+    complaints: r.complaints ? { ...r.complaints, records: r.complaints.records.filter((c) => inP(c.date)) } : r.complaints,
+    financial: r.financial ? { ...r.financial, records: r.financial.records.filter((x) => inP(x.date)) } : r.financial,
+    trends: r.trends ? { ...r.trends, months } : r.trends,
+  }
+}
+const periodLabel = (p) => `${p.from ? new Date(p.from).toLocaleDateString() : 'start'} → ${p.to ? new Date(p.to).toLocaleDateString() : 'end'}`
+
 const money = (v) => Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 })
 const FIN_CLS = { overdue: 'fx-sev-high', disputed: 'fx-sev-medium', unpaid: 'fx-sev-medium', paid: 'fx-sev-low', unknown: 'fx-sev-low' }
 const finStatus = (s) => `<span class="fx-sev ${FIN_CLS[s] || 'fx-sev-low'}">${esc(String(s || 'unknown').toUpperCase())}</span>`
@@ -266,10 +327,12 @@ function clientsSection(r) {
 }
 
 /** Report body HTML (no outer page chrome) — for the in-app tab and the export. */
-export function renderForensicReport(r, opts = {}) {
+export function renderForensicReport(r0, opts = {}) {
+  const r = withPeriod(r0, opts.period)
   const { good, bad } = assess(r)
   return `
     <div class="fx-report">
+      ${r.period ? `<p class="notice"><strong>Period filter:</strong> ${esc(periodLabel(r.period))} — complaints, financial register and trends below are limited to this period; clients, audit findings and totals cover the whole mailbox.</p>` : ''}
       <div class="fx-verdict">
         <div class="fx-verdict-col fx-good">
           <h3>✓ Looks normal</h3>
@@ -281,7 +344,11 @@ export function renderForensicReport(r, opts = {}) {
         </div>
       </div>
 
+      ${execSection(opts.exec, { print: !opts.interactive })}
+
       ${auditSection(r, opts)}
+
+      ${themesSection(r)}
 
       ${clientsSection(r)}
 
@@ -371,7 +438,7 @@ export function buildForensicHtmlDoc(r, fileName, opts = {}) {
 </style></head><body>
   <h1>${esc(opts.title || '🔍 Forensic Report')}</h1>
   <p class="fx-sub"><strong>${esc(fileName)}</strong> · generated ${esc(new Date().toLocaleString())} · Timeless Outlook Extractor</p>
-  ${opts.body != null ? opts.body : renderForensicReport(r, { triage: opts.triage, ai: opts.ai })}
+  ${opts.body != null ? opts.body : renderForensicReport(r, { triage: opts.triage, ai: opts.ai, exec: opts.exec, period: opts.period })}
   <p class="fx-sub" style="margin-top:2rem">Automated heuristic analysis — findings are indicators for a human reviewer, not conclusions. A Timeless International Product · craftedbytimeless.com</p>
 </body></html>`
 }

@@ -1,9 +1,9 @@
 import './styles.css'
 import { exportCsv, exportXlsx, exportTxt, exportJson, exportDoc, printHtml, exportXlsxWorkbook, buildEml, downloadBlob, safeFilename } from './exporters.js'
 import { startCyberBackground } from './cyberbg.js'
-import { renderForensicReport, buildForensicHtmlDoc, TRIAGE_TEXT, findingKey } from './forensic-render.js'
+import { renderForensicReport, buildForensicHtmlDoc, TRIAGE_TEXT, findingKey, withPeriod } from './forensic-render.js'
 import { renderClientsView, renderCaseFile, filterClients, renderAiDive, renderStaffView } from './clients-render.js'
-import { getAiSettings, saveAiSettings, clearAiKey, aiEnabled, setSessionKey, deepseekChat, deepDivePrompt, complaintsReviewPrompt, askPrompt, textOf, keywordsOf } from './ai.js'
+import { getAiSettings, saveAiSettings, clearAiKey, aiEnabled, setSessionKey, deepseekChat, deepDivePrompt, complaintsReviewPrompt, executiveSummaryPrompt, askPrompt, textOf, keywordsOf } from './ai.js'
 import { loadVaultFile, decryptVault, encryptVault, generatePassphrase } from './vault.js'
 
 const $ = (sel) => document.querySelector(sel)
@@ -28,8 +28,9 @@ const state = {
   viewerMessage: null,
   clientQuery: '',
   selectedClient: null,
-  ai: { dive: {}, complaints: {} },
+  ai: { dive: {}, complaints: {}, exec: null },
   vault: null,
+  period: null,
 }
 
 // Worker request/response plumbing for lazy body fetches
@@ -518,7 +519,7 @@ $('#contact-search').addEventListener('input', renderContacts)
 function renderForensic() {
   const container = $('#forensic-report')
   if (!container || !state.forensic) return
-  container.innerHTML = `<div id="forensic-search-results" hidden></div>` + renderForensicReport(state.forensic, { triage: state.triage, interactive: true, ai: state.ai.complaints })
+  container.innerHTML = `<div id="forensic-search-results" hidden></div>` + renderForensicReport(state.forensic, { triage: state.triage, interactive: true, ai: state.ai.complaints, exec: state.ai.exec, period: state.period })
   renderForensicSearch()
 }
 
@@ -663,8 +664,8 @@ function aiStorageKey() { return `tox-ai:${state.fileName}` }
 function loadAi() {
   try {
     const s = JSON.parse(localStorage.getItem(aiStorageKey()) || '{}') || {}
-    return { dive: s.dive || {}, complaints: s.complaints || {} }
-  } catch { return { dive: {}, complaints: {} } }
+    return { dive: s.dive || {}, complaints: s.complaints || {}, exec: s.exec || null }
+  } catch { return { dive: {}, complaints: {}, exec: null } }
 }
 function saveAi() { try { localStorage.setItem(aiStorageKey(), JSON.stringify(state.ai)) } catch { /* quota */ } }
 
@@ -1007,6 +1008,44 @@ $('#forensic-ai-apply').addEventListener('click', () => {
   alert(k ? `${k} complaint(s) marked Dismissed (false positive) from the AI review.` : 'Nothing to apply — run "🤖 Review complaints" first, or all AI dismissals are already applied.')
 })
 
+// Period filter (complaints, financial register, trends).
+function periodComplaints() {
+  return (withPeriod(state.forensic, state.period)?.complaints?.records) || []
+}
+function applyPeriod() {
+  const from = $('#period-from').value ? new Date($('#period-from').value + 'T00:00:00').getTime() : null
+  const to = $('#period-to').value ? new Date($('#period-to').value + 'T23:59:59').getTime() : null
+  state.period = from || to ? { from, to } : null
+  const cp = state.period ? periodComplaints().length : 0
+  $('#period-note').textContent = state.period ? `${cp.toLocaleString()} complaint(s) in period` : ''
+  renderForensic()
+}
+$('#period-apply').addEventListener('click', applyPeriod)
+$('#period-clear').addEventListener('click', () => { $('#period-from').value = ''; $('#period-to').value = ''; applyPeriod() })
+
+// 2b) AI executive summary across all clients.
+$('#forensic-ai-exec').addEventListener('click', async () => {
+  if (!state.forensic || !requireAi()) return
+  const btn = $('#forensic-ai-exec')
+  const original = btn.textContent
+  btn.disabled = true
+  btn.textContent = 'Briefing…'
+  try {
+    const s = getAiSettings()
+    const r = await deepseekChat(executiveSummaryPrompt(state.forensic, state.forensic.complaints.records, { fileName: state.fileName }), { maxTokens: 3500 })
+    state.ai.exec = { data: r.data, text: r.text, usage: r.usage, model: s.model, when: Date.now() }
+    saveAi()
+    renderForensic()
+    $('#forensic-report').scrollIntoView({ behavior: 'smooth', block: 'start' })
+  } catch (err) {
+    state.ai.exec = { error: err.message, when: Date.now() }
+    renderForensic()
+  } finally {
+    btn.disabled = false
+    btn.textContent = original
+  }
+})
+
 // 3) Ask the mailbox — retrieves matching emails by keyword, then asks.
 async function askMailbox() {
   const q = $('#ask-input').value.trim()
@@ -1337,7 +1376,7 @@ const exporters = {
   'contacts-xlsx': () => exportXlsx(`${exportBase()}-contacts.xlsx`, filteredContacts(), CONTACT_COLUMNS, 'Contacts'),
   'forensic-html': () => {
     if (!state.forensic) return
-    downloadBlob(`${exportBase()}-forensic-report.html`, 'text/html;charset=utf-8', buildForensicHtmlDoc(state.forensic, state.fileName, { triage: state.triage, ai: state.ai.complaints }))
+    downloadBlob(`${exportBase()}-forensic-report.html`, 'text/html;charset=utf-8', buildForensicHtmlDoc(state.forensic, state.fileName, { triage: state.triage, ai: state.ai.complaints, exec: state.ai.exec, period: state.period }))
   },
   'forensic-json': () => {
     if (!state.forensic) return
@@ -1345,11 +1384,11 @@ const exporters = {
   },
   'forensic-pdf': () => {
     if (!state.forensic) return
-    printHtml(buildForensicHtmlDoc(state.forensic, state.fileName, { triage: state.triage, ai: state.ai.complaints }))
+    printHtml(buildForensicHtmlDoc(state.forensic, state.fileName, { triage: state.triage, ai: state.ai.complaints, exec: state.ai.exec, period: state.period }))
   },
   'forensic-word': () => {
     if (!state.forensic) return
-    exportDoc(`${exportBase()}-forensic-report.doc`, buildForensicHtmlDoc(state.forensic, state.fileName, { triage: state.triage, ai: state.ai.complaints }))
+    exportDoc(`${exportBase()}-forensic-report.doc`, buildForensicHtmlDoc(state.forensic, state.fileName, { triage: state.triage, ai: state.ai.complaints, exec: state.ai.exec, period: state.period }))
   },
   'forensic-xlsx': () => {
     if (!state.forensic) return
@@ -1395,12 +1434,14 @@ const exporters = {
     }))
   },
   'complaints-csv': () => {
-    if (!state.forensic?.complaints?.records.length) return alert('No complaints detected to export.')
-    exportCsv(`${exportBase()}-complaints.csv`, state.forensic.complaints.records, COMPLAINT_COLUMNS)
+    const rows = periodComplaints()
+    if (!rows.length) return alert('No complaints detected to export.')
+    exportCsv(`${exportBase()}-complaints.csv`, rows, COMPLAINT_COLUMNS)
   },
   'complaints-xlsx': () => {
-    if (!state.forensic?.complaints?.records.length) return alert('No complaints detected to export.')
-    exportXlsx(`${exportBase()}-complaints.xlsx`, state.forensic.complaints.records, COMPLAINT_COLUMNS, 'Complaints')
+    const rows = periodComplaints()
+    if (!rows.length) return alert('No complaints detected to export.')
+    exportXlsx(`${exportBase()}-complaints.xlsx`, rows, COMPLAINT_COLUMNS, 'Complaints')
   },
   'audit-csv': () => {
     if (!state.forensic?.audit?.findings.length) return alert('No audit findings to export.')

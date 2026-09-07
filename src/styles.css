@@ -479,6 +479,7 @@ td.ellipsis { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white
 .modal-sub { margin: 0.5rem 0 0; font-size: 0.95rem; color: #ff9fac; }
 .modal code { background: var(--panel-2); padding: 0 0.3rem; border-radius: 4px; }
 .ai-ask { margin-top: -0.25rem; }
+.period-bar input[type='date'] { background: var(--panel-2); color: var(--text); border: 1px solid var(--border-red); border-radius: 6px; padding: 0.35rem 0.5rem; font-size: 0.85rem; color-scheme: dark; }
 .ai-ask input { flex: 1; min-width: 260px; background: var(--panel); color: var(--text); border: 1px solid #6d28d9; border-radius: 6px; padding: 0.45rem 0.7rem; font-size: 0.9rem; }
 .ai-ask input:focus { outline: none; box-shadow: 0 0 10px rgba(167, 139, 250, 0.5); }
 .ai-box { border: 1px solid #4c1d95; border-left: 4px solid #a78bfa; border-radius: var(--radius); padding: 0.75rem 1rem; margin: 0.75rem 0; background: rgba(109, 40, 217, 0.08); }

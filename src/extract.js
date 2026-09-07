@@ -138,6 +138,7 @@ export class PstSession {
       contacts: scope ? scope.contacts !== false : true,
       forensic: scope ? scope.forensic === true : false,
       deepScan: scope ? scope.deepScan === true : false,
+      ourDomains: scope && Array.isArray(scope.ourDomains) ? scope.ourDomains.map((d) => String(d).toLowerCase().trim()).filter(Boolean) : [],
     }
     this.folders = []
     this.messages = []
@@ -501,13 +502,15 @@ export class PstSession {
 
     // Now the collector can classify complaints (client = external) and
     // match complaints against outbound replies.
-    const report = this.#forensic.finalize({ primaryDomain })
+    const report = this.#forensic.finalize({ primaryDomain, ourDomains: this.#scope.ourDomains })
 
+    const ours = this.#scope.ourDomains || []
+    const isInternal = (d) => (ours.length ? ours.includes(d) : d === primaryDomain)
     let externalSenders = 0
     for (const a of addrs) {
       if (!a.sent) continue
       const at = a.email.lastIndexOf('@')
-      if (at >= 0 && a.email.slice(at + 1) !== primaryDomain) externalSenders++
+      if (at >= 0 && !isInternal(a.email.slice(at + 1))) externalSenders++
     }
 
     report.topSenders = topSenders

@@ -10,6 +10,7 @@ const n = (v) => (typeof v === 'number' ? v.toLocaleString() : '0')
 const fmtDay = (d) => (d ? new Date(d).toLocaleDateString() : '—')
 const fmtDate = (d) => (d ? new Date(d).toLocaleString() : '—')
 const hrs = (h) => (h == null ? '—' : h < 48 ? `${h} h` : `${Math.round((h / 24) * 10) / 10} d`)
+const fmtMoney = (v) => Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 })
 
 const LABEL_TEXT = { critical: 'Critical', 'at-risk': 'At risk', watch: 'Watch', healthy: 'Healthy' }
 export const labelBadge = (l) => `<span class="fx-lbl fx-lbl-${esc(l)}">${esc(LABEL_TEXT[l] || l)}</span>`
@@ -32,6 +33,20 @@ export function filterClients(list, query) {
   const q = String(query || '').trim().toLowerCase()
   if (!q) return list
   return list.filter((c) => `${c.email} ${c.name} ${c.domain}`.toLowerCase().includes(q))
+}
+
+/** Staff accountability: who on our side handled (or dropped) which clients. */
+export function renderStaffView(staff) {
+  if (!staff || !staff.list || !staff.list.length) return ''
+  const rows = staff.list.map((s) => `<tr>
+      <td><div class="cl-name">${esc(s.name || s.email)}</div>${s.name ? `<div class="fx-muted cl-email">${esc(s.email)}</div>` : ''}${s.internal ? '' : '<div class="fx-muted">(outside our domains)</div>'}</td>
+      <td class="num">${n(s.sent)}</td><td class="num">${n(s.clients)}</td><td class="num">${n(s.answered)}</td>
+      <td class="num ${s.unanswered ? 'fx-bad-text' : ''}">${n(s.unanswered)}</td><td class="num">${hrs(s.medianResponseHours)}</td>
+    </tr>`).join('')
+  return `<section class="fx-section"><h3>Staff responsiveness</h3>
+    <p class="fx-muted cl-hint">Who on our side handled which clients. <strong>Unanswered (owned)</strong> = client messages left without a reply in threads that person last replied to${staff.unassignedUnanswered ? ` — plus <strong>${n(staff.unassignedUnanswered)}</strong> unanswered thread(s) nobody ever replied to` : ''}.</p>
+    <div class="table-wrap cl-wrap"><table class="fx-table cl-table"><thead><tr><th>Staff</th><th>Replies sent</th><th>Clients handled</th><th>Answered</th><th>Unanswered (owned)</th><th>Median response</th></tr></thead><tbody>${rows}</tbody></table></div>
+  </section>`
 }
 
 export function renderClientsView(clients, { query = '' } = {}) {
@@ -120,7 +135,7 @@ export function renderAiDive(ai, { print = false } = {}) {
 }
 
 /** Case file for one client. timeline: [{id, ref, dir, date, subject, folder, from, to, hasAttachments}] */
-export function renderCaseFile(c, timeline, complaints, { print = false, ai = null } = {}) {
+export function renderCaseFile(c, timeline, complaints, { print = false, ai = null, financial = [] } = {}) {
   const total = c.complaints.high + c.complaints.medium + c.complaints.low
   const stats = [
     ['Attention score', `${c.score}/100`], ['Messages in / out', `${n(c.inbound)} / ${n(c.outbound)}`],
@@ -137,7 +152,8 @@ export function renderCaseFile(c, timeline, complaints, { print = false, ai = nu
   if (c.complaints.high) problems.push(`${n(c.complaints.high)} high-severity complaint(s)${c.escalated ? `, ${n(c.escalated)} escalated` : ''}.`)
   if (total && !c.complaints.high) problems.push(`${n(total)} complaint(s) (${Object.keys(c.complaintTags || {}).join(', ') || 'general'}).`)
   if (c.bec) problems.push(`${n(c.bec)} request(s) to change payment or bank details — verify out-of-band before paying.`)
-  if (c.financial) problems.push(`${n(c.financial)} message(s) about invoices, payments or balances.`)
+  if (c.fin && (c.fin.overdue || c.fin.disputed || c.fin.unpaid)) problems.push(`Money: ${c.fin.overdue ? `${n(c.fin.overdue)} overdue` : ''}${c.fin.disputed ? `${c.fin.overdue ? ', ' : ''}${n(c.fin.disputed)} disputed` : ''}${c.fin.unpaid ? `${c.fin.overdue || c.fin.disputed ? ', ' : ''}${n(c.fin.unpaid)} unpaid` : ''} payment message(s)${Object.keys(c.fin.amounts || {}).length ? ` — amounts mentioned: ${Object.entries(c.fin.amounts).map(([k, v]) => `${k} ${fmtMoney(v)}`).join(', ')}` : ''}.`)
+  else if (c.financial) problems.push(`${n(c.financial)} message(s) about invoices, payments or balances.`)
   if (c.legal) problems.push(`${n(c.legal)} message(s) with legal / dispute language.`)
   if (!problems.length) problems.push('No problems detected — relationship looks healthy.')
 
@@ -145,6 +161,11 @@ export function renderCaseFile(c, timeline, complaints, { print = false, ai = nu
 
   const compRows = complaints.map((x) => `<tr>${print ? `<td class="fx-ref">${esc(x.ref)}</td>` : `<td>${refSpan(x)}</td>`}<td><span class="fx-sev fx-sev-${esc(x.severity)}">${esc(x.severity.toUpperCase())}</span></td><td class="fx-nowrap">${esc(fmtDay(x.date))}</td><td>${esc(x.subject || '(no subject)')}<div class="fx-snip">${esc(x.snippet)}</div><div class="fx-tags">${x.tags.map((t) => `<span class="fx-chip">${esc(t)}</span>`).join(' ')}</div></td><td>${x.responded ? '<span class="fx-ok">answered</span>' : '<span class="fx-bad-text">no reply</span>'}</td></tr>`).join('')
 
+  const finRows = financial.map((x) => `<tr>${print ? `<td class="fx-ref">${esc(x.ref)}</td>` : `<td>${refSpan(x)}</td>`}<td class="fx-nowrap">${esc(fmtDay(x.date))}</td><td>${x.dir === 'in' ? '<span class="cl-in">⬇ IN</span>' : '<span class="cl-out">⬆ OUT</span>'}</td><td>${esc(x.subject || '(no subject)')}<div class="fx-snip">${esc(x.snippet)}</div></td><td class="fx-nowrap">${x.amounts.map((a) => `${esc(a.currency)} ${esc(fmtMoney(a.value))}`).join('<br />') || '—'}</td><td class="fx-nowrap">${esc(x.invoices.join(', ')) || '—'}</td><td class="fx-nowrap">${esc(x.dueDates.join(', ')) || '—'}</td><td><span class="fx-sev ${x.status === 'overdue' ? 'fx-sev-high' : x.status === 'disputed' || x.status === 'unpaid' ? 'fx-sev-medium' : 'fx-sev-low'}">${esc(String(x.status).toUpperCase())}</span></td></tr>`).join('')
+  const fin = c.fin || { amounts: {}, overdue: 0, disputed: 0, unpaid: 0, invoices: [] }
+  const finSection = (financial.length || Object.keys(fin.amounts || {}).length) ? `<section class="fx-section"><h4>Financial <span class="fx-muted">(${n(financial.length)} message${financial.length === 1 ? '' : 's'})</span></h4>
+      <p class="fx-line">${Object.entries(fin.amounts || {}).map(([cur, v]) => `<span class="fx-chip">${esc(cur)} ${esc(fmtMoney(v))}</span>`).join(' ')}${fin.overdue ? ` <span class="fx-sev fx-sev-high">overdue ${n(fin.overdue)}</span>` : ''}${fin.disputed ? ` <span class="fx-sev fx-sev-medium">disputed ${n(fin.disputed)}</span>` : ''}${fin.unpaid ? ` <span class="fx-sev fx-sev-medium">unpaid ${n(fin.unpaid)}</span>` : ''}${fin.invoices && fin.invoices.length ? ` <span class="fx-muted">invoices: ${esc(fin.invoices.slice(0, 8).join(', '))}</span>` : ''}</p>
+      ${financial.length ? `<table class="fx-table fx-samples"><thead><tr><th>Ref</th><th>Date</th><th>Dir</th><th>Subject</th><th>Amounts</th><th>Invoice</th><th>Due</th><th>Status</th></tr></thead><tbody>${finRows}</tbody></table>` : ''}</section>` : ''
   const tlRows = timeline.map((m) => `<tr>${print ? `<td class="fx-ref">${esc(m.ref || '')}</td>` : `<td>${refSpan(m)}</td>`}<td>${m.dir === 'in' ? '<span class="cl-in">⬇ IN</span>' : '<span class="cl-out">⬆ OUT</span>'}</td><td class="fx-nowrap">${esc(fmtDate(m.date))}</td><td>${esc(m.subject || '(no subject)')}${m.hasAttachments ? ' 📎' : ''}</td><td class="fx-ellip fx-muted">${esc(m.folder)}</td></tr>`).join('')
 
   return `<div class="case-file">
@@ -156,6 +177,7 @@ export function renderCaseFile(c, timeline, complaints, { print = false, ai = nu
     <section class="fx-section"><h4>What’s going on with this client</h4><ul class="case-problems">${problems.map((p) => `<li>${esc(p)}</li>`).join('')}</ul>${tags ? `<p class="fx-line">${tags}</p>` : ''}</section>
     <div id="case-ai-out">${ai ? renderAiDive(ai, { print }) : ''}</div>
     ${notable ? `<section class="fx-section"><h4>Notable items <span class="fx-muted">(${n(c.refs.length)})</span></h4><table class="fx-table fx-samples"><thead><tr><th>Ref</th><th>Type</th><th>Date</th><th>Subject</th></tr></thead><tbody>${notable}</tbody></table></section>` : ''}
+    ${finSection}
     ${complaints.length ? `<section class="fx-section"><h4>Complaints <span class="fx-muted">(${n(complaints.length)})</span></h4><table class="fx-table fx-samples"><thead><tr><th>Ref</th><th>Severity</th><th>Date</th><th>Subject / detail</th><th>Reply</th></tr></thead><tbody>${compRows}</tbody></table></section>` : ''}
     <section class="fx-section"><h4>Timeline <span class="fx-muted">(${n(timeline.length)} message${timeline.length === 1 ? '' : 's'}${timeline.length ? '' : ' — tick “Messages” when loading to include the full timeline'})</span></h4>
       ${timeline.length ? `<table class="fx-table fx-samples"><thead><tr><th>Ref</th><th>Dir</th><th>Date</th><th>Subject</th><th>Folder</th></tr></thead><tbody>${tlRows}</tbody></table>` : ''}

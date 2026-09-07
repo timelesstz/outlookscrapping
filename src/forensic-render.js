@@ -1,5 +1,6 @@
 // Renders a forensic report object (from forensic.js) into HTML — used both
 // for the in-app tab and the standalone downloadable report.
+import { renderStaffView } from './clients-render.js'
 
 const esc = (v) =>
   String(v == null ? '' : v)
@@ -210,6 +211,33 @@ function complaintsSection(r, opts = {}) {
     <table class="fx-table fx-samples"><thead><tr><th>Ref</th><th>Severity</th><th>Date</th><th>Client</th><th>Subject / detail</th><th>Reply</th><th>Triage</th><th>AI review</th></tr></thead><tbody>${rows}</tbody></table>${more}</section>`
 }
 
+const money = (v) => Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 })
+const FIN_CLS = { overdue: 'fx-sev-high', disputed: 'fx-sev-medium', unpaid: 'fx-sev-medium', paid: 'fx-sev-low', unknown: 'fx-sev-low' }
+const finStatus = (s) => `<span class="fx-sev ${FIN_CLS[s] || 'fx-sev-low'}">${esc(String(s || 'unknown').toUpperCase())}</span>`
+
+function financialSection(r) {
+  const fx = r.financial
+  if (!fx || !fx.total) return `<section class="fx-section"><h3>Financial register</h3><p class="fx-muted">No amounts or invoice references detected${r.deepScan ? '' : ' in subjects — enable Deep content scan to read bodies'}.</p></section>`
+  const totals = Object.entries(fx.totals).sort((a, b) => b[1] - a[1]).map(([cur, v]) => `<span class="fx-chip">${esc(cur)} ${esc(money(v))}</span>`).join(' ')
+  const byClient = fx.clients.slice(0, 20).map((c) => `<tr><td class="fx-ellip">${esc(c.name || c.client)}${c.name ? `<div class="fx-muted">${esc(c.client)}</div>` : ''}</td><td class="num">${n(c.records)}</td><td class="fx-nowrap">${Object.entries(c.amounts).map(([cur, v]) => `${esc(cur)} ${esc(money(v))}`).join('<br />') || '—'}</td><td class="num ${c.overdue ? 'fx-bad-text' : ''}">${n(c.overdue)}</td><td class="num ${c.disputed ? 'fx-bad-text' : ''}">${n(c.disputed)}</td><td class="num">${n(c.unpaid)}</td><td class="fx-ellip">${esc(c.invoices.slice(0, 6).join(', '))}</td></tr>`).join('')
+  const rows = fx.records.slice(0, 150).map((x) => `<tr>${refCell(x)}<td class="fx-nowrap">${esc(fmtDay(x.date))}</td><td>${x.dir === 'in' ? '<span class="cl-in">IN</span>' : x.dir === 'out' ? '<span class="cl-out">OUT</span>' : ''}</td><td class="fx-ellip">${esc(x.client || x.from)}</td><td>${esc(x.subject || '(no subject)')}<div class="fx-snip">${esc(x.snippet)}</div></td><td class="fx-nowrap">${x.amounts.map((a) => `${esc(a.currency)} ${esc(money(a.value))}`).join('<br />') || '—'}</td><td class="fx-nowrap">${esc(x.invoices.join(', ')) || '—'}</td><td class="fx-nowrap">${esc(x.dueDates.join(', ')) || '—'}</td><td>${finStatus(x.status)}</td></tr>`).join('')
+  return `<section class="fx-section"><h3>Financial register</h3>
+    <p class="fx-line"><strong>${n(fx.total)}</strong> message(s) with money content · ${sevBadge('high')} overdue ${n(fx.overdue)} · ${sevBadge('medium')} disputed ${n(fx.disputed)} · unpaid ${n(fx.unpaid)}</p>
+    <p class="fx-line">Amounts mentioned <span class="fx-muted">(sum of the largest amount per message)</span>: ${totals || '<span class="fx-muted">none</span>'}</p>
+    ${byClient ? `<h4>By client</h4><table class="fx-table fx-samples"><thead><tr><th>Client</th><th>Msgs</th><th>Amounts</th><th>Overdue</th><th>Disputed</th><th>Unpaid</th><th>Invoices</th></tr></thead><tbody>${byClient}</tbody></table>` : ''}
+    <h4>Register</h4><table class="fx-table fx-samples"><thead><tr><th>Ref</th><th>Date</th><th>Dir</th><th>Client</th><th>Subject</th><th>Amounts</th><th>Invoice</th><th>Due</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>
+    ${fx.records.length > 150 ? `<p class="fx-muted">Showing 150 of ${n(fx.records.length)} — the full register is in the Excel workbook.</p>` : ''}
+  </section>`
+}
+
+function trendsSection(r) {
+  const t = r.trends
+  if (!t || !t.months || !t.months.length) return ''
+  const max = Math.max(1, ...t.months.map((m) => (t.inbound[m] || 0) + (t.outbound[m] || 0)))
+  const rows = t.months.map((m) => `<tr><td class="fx-nowrap">${esc(m)}</td><td class="num">${n(t.inbound[m] || 0)}</td><td class="num">${n(t.outbound[m] || 0)}</td><td class="num ${t.complaints[m] ? 'fx-bad-text' : ''}">${n(t.complaints[m] || 0)}</td><td class="num">${hrs(t.medianResponseHours[m])}</td><td class="fx-bar-cell"><span class="fx-bar" style="width:${pct((t.inbound[m] || 0) + (t.outbound[m] || 0), max)}%"></span></td></tr>`).join('')
+  return `<section class="fx-section"><h3>Trends by month</h3><table class="fx-table"><thead><tr><th>Month</th><th>From clients</th><th>To clients</th><th>Complaints</th><th>Median response</th><th>Volume</th></tr></thead><tbody>${rows}</tbody></table></section>`
+}
+
 const LBL = { critical: 'Critical', 'at-risk': 'At risk', watch: 'Watch', healthy: 'Healthy' }
 const lblBadge = (l) => `<span class="fx-lbl fx-lbl-${esc(l)}">${esc(LBL[l] || l)}</span>`
 const hrs = (h) => (h == null ? '—' : h < 48 ? `${h} h` : `${Math.round((h / 24) * 10) / 10} d`)
@@ -256,6 +284,12 @@ export function renderForensicReport(r, opts = {}) {
       ${auditSection(r, opts)}
 
       ${clientsSection(r)}
+
+      ${renderStaffView(r.staff)}
+
+      ${financialSection(r)}
+
+      ${trendsSection(r)}
 
       ${complaintsSection(r, opts)}
 

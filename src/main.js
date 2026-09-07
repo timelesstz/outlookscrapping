@@ -2,7 +2,7 @@ import './styles.css'
 import { exportCsv, exportXlsx, exportTxt, exportJson, exportDoc, printHtml, exportXlsxWorkbook, buildEml, downloadBlob, safeFilename } from './exporters.js'
 import { startCyberBackground } from './cyberbg.js'
 import { renderForensicReport, buildForensicHtmlDoc, TRIAGE_TEXT, findingKey } from './forensic-render.js'
-import { renderClientsView, renderCaseFile, filterClients, renderAiDive } from './clients-render.js'
+import { renderClientsView, renderCaseFile, filterClients, renderAiDive, renderStaffView } from './clients-render.js'
 import { getAiSettings, saveAiSettings, clearAiKey, aiEnabled, setSessionKey, deepseekChat, deepDivePrompt, complaintsReviewPrompt, askPrompt, textOf, keywordsOf } from './ai.js'
 import { loadVaultFile, decryptVault, encryptVault, generatePassphrase } from './vault.js'
 
@@ -105,6 +105,7 @@ worker.onerror = (e) => {
 // ---------------------------------------------------------------------------
 const dropZone = $('#drop-zone')
 const fileInput = $('#file-input')
+try { $('#scope-domains').value = localStorage.getItem('tox-our-domains') || '' } catch { /* storage */ }
 
 dropZone.addEventListener('click', () => fileInput.click())
 dropZone.addEventListener('keydown', (e) => {
@@ -132,7 +133,10 @@ async function loadFile(file) {
   }
   // No upload size cap — any PST/OST is accepted. Large files simply take
   // longer; show the size so the user knows a big scan is in progress.
+  const ourDomains = $('#scope-domains').value.split(/[,;\s]+/).map((d) => d.trim().toLowerCase().replace(/^@/, '')).filter(Boolean)
+  try { localStorage.setItem('tox-our-domains', ourDomains.join(', ')) } catch { /* storage */ }
   const scope = {
+    ourDomains,
     addresses: $('#scope-addresses').checked,
     messages: $('#scope-messages').checked,
     contacts: $('#scope-contacts').checked,
@@ -878,6 +882,22 @@ $('#vault-make').addEventListener('click', async () => {
 })
 updateAiButtons()
 
+// Auto-logout the admin session after 30 minutes without activity (PIN mode).
+const AUTO_LOGOUT_MS = 30 * 60 * 1000
+let idleTimer = null
+function resetIdleTimer() {
+  if (idleTimer) clearTimeout(idleTimer)
+  idleTimer = setTimeout(() => {
+    if (loadPinVault() && aiEnabled()) {
+      setSessionKey('')
+      clearAiKey()
+      updateAiButtons()
+    }
+  }, AUTO_LOGOUT_MS)
+}
+for (const ev of ['mousemove', 'keydown', 'click', 'touchstart']) document.addEventListener(ev, resetIdleTimer, { passive: true })
+resetIdleTimer()
+
 function requireAi() {
   if (aiEnabled()) return true
   openAiSettings()
@@ -932,7 +952,7 @@ $('#tab-clients').addEventListener('click', async (e) => {
     tl.sort((a, b) => (a.date ? +new Date(a.date) : 0) - (b.date ? +new Date(b.date) : 0))
     const bodies = await bodiesFor(tl.map((m) => m.id))
     const msgs = tl.map((m) => ({ ...m, text: bodies.get(m.id) || '' }))
-    const r = await deepseekChat(deepDivePrompt(c, msgs, clientComplaints(c.email)), { maxTokens: 3000 })
+    const r = await deepseekChat(deepDivePrompt(c, msgs, clientComplaints(c.email), clientFinancial(c.email)), { maxTokens: 3000 })
     state.ai.dive[c.email] = { data: r.data, text: r.text, usage: r.usage, model: s.model, when: Date.now(), messagesSent: msgs.length }
     saveAi()
     out.innerHTML = renderAiDive(state.ai.dive[c.email])
@@ -1057,10 +1077,14 @@ function clientComplaints(email) {
   return (state.forensic?.complaints?.records || []).filter((c) => c.client === email)
 }
 
+function clientFinancial(email) {
+  return (state.forensic?.financial?.records || []).filter((r) => r.client === email)
+}
+
 function renderClients() {
   const view = $('#clients-view')
   if (!view || !state.forensic) return
-  view.innerHTML = renderClientsView(state.forensic.clients, { query: state.clientQuery })
+  view.innerHTML = renderClientsView(state.forensic.clients, { query: state.clientQuery }) + renderStaffView(state.forensic.staff)
   renderClientCase()
 }
 
@@ -1069,7 +1093,7 @@ function renderClientCase() {
   if (!box) return
   const c = selectedClientObj()
   if (!c) { box.hidden = true; box.innerHTML = ''; return }
-  box.innerHTML = renderCaseFile(c, clientTimeline(c.email), clientComplaints(c.email), { ai: state.ai.dive[c.email] || null })
+  box.innerHTML = renderCaseFile(c, clientTimeline(c.email), clientComplaints(c.email), { ai: state.ai.dive[c.email] || null, financial: clientFinancial(c.email) })
   box.hidden = false
   box.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
@@ -1198,6 +1222,44 @@ const TIMELINE_COLUMNS = [
   { key: 'hasAttachments', label: 'Attachments', format: (m) => (m.hasAttachments ? 'Yes' : '') },
 ]
 
+const FIN_COLUMNS = [
+  { key: 'ref', label: 'Ref' },
+  { key: 'date', label: 'Date', format: (r) => (r.date ? new Date(r.date).toISOString() : '') },
+  { key: 'dir', label: 'Direction', format: (r) => (r.dir === 'in' ? 'From client' : r.dir === 'out' ? 'To client' : '') },
+  { key: 'from', label: 'From' },
+  { key: 'client', label: 'Client' },
+  { key: 'subject', label: 'Subject' },
+  { key: 'amounts', label: 'Amounts', format: (r) => r.amounts.map((a) => `${a.currency} ${a.value}`).join('; ') },
+  { key: 'invoices', label: 'Invoice / reference', format: (r) => r.invoices.join('; ') },
+  { key: 'dueDates', label: 'Due dates', format: (r) => r.dueDates.join('; ') },
+  { key: 'status', label: 'Status' },
+  { key: 'snippet', label: 'Context' },
+  { key: 'folder', label: 'Folder' },
+  { key: 'messageId', label: 'Message-ID' },
+]
+
+const STAFF_COLUMNS = [
+  { key: 'name', label: 'Name' },
+  { key: 'email', label: 'Email' },
+  { key: 'internal', label: 'Our staff', format: (s) => (s.internal ? 'Yes' : 'No') },
+  { key: 'sent', label: 'Replies sent' },
+  { key: 'clients', label: 'Clients handled' },
+  { key: 'answered', label: 'Answered' },
+  { key: 'unanswered', label: 'Unanswered (owned)' },
+  { key: 'medianResponseHours', label: 'Median response (hours)' },
+]
+
+const TREND_COLUMNS = [
+  { key: 'month', label: 'Month' },
+  { key: 'inbound', label: 'From clients' },
+  { key: 'outbound', label: 'To clients' },
+  { key: 'complaints', label: 'Complaints' },
+  { key: 'medianResponseHours', label: 'Median response (hours)' },
+]
+function trendRows(t) {
+  return ((t && t.months) || []).map((m) => ({ month: m, inbound: t.inbound[m] || 0, outbound: t.outbound[m] || 0, complaints: t.complaints[m] || 0, medianResponseHours: t.medianResponseHours[m] }))
+}
+
 // Flattened category matches (one row per detected message) for the workbook.
 const MATCH_COLUMNS = [
   { key: 'ref', label: 'Ref' },
@@ -1258,6 +1320,9 @@ function buildReportWorkbook() {
     { name: 'Investigation Matches', rows: matches, columns: MATCH_COLUMNS },
     { name: 'Red Flags', rows: redflags, columns: REDFLAG_COLUMNS },
     { name: 'Clients', rows: f.clients?.list || [], columns: CLIENT_COLUMNS },
+    { name: 'Financial Register', rows: f.financial?.records || [], columns: FIN_COLUMNS },
+    { name: 'Staff', rows: f.staff?.list || [], columns: STAFF_COLUMNS },
+    { name: 'Trends', rows: trendRows(f.trends), columns: TREND_COLUMNS },
   ]
 }
 
@@ -1309,6 +1374,7 @@ const exporters = {
       { name: 'Timeline', rows: clientTimeline(c.email), columns: TIMELINE_COLUMNS },
       { name: 'Complaints', rows: clientComplaints(c.email), columns: COMPLAINT_COLUMNS },
       { name: 'Notable', rows: c.refs || [], columns: [{ key: 'ref', label: 'Ref' }, { key: 'type', label: 'Type' }, { key: 'date', label: 'Date', format: (r) => (r.date ? new Date(r.date).toISOString() : '') }, { key: 'subject', label: 'Subject' }] },
+      { name: 'Financial', rows: clientFinancial(c.email), columns: FIN_COLUMNS },
       ...aiSheets(c),
     ])
   },
@@ -1317,7 +1383,7 @@ const exporters = {
     if (!c) return alert('Click a client row first to open their case file.')
     exportDoc(`${exportBase()}-client-${safeFilename(c.email)}.doc`, buildForensicHtmlDoc(null, state.fileName, {
       title: `Client case file — ${c.name || c.email}`,
-      body: renderCaseFile(c, clientTimeline(c.email), clientComplaints(c.email), { print: true, ai: state.ai.dive[c.email] || null }),
+      body: renderCaseFile(c, clientTimeline(c.email), clientComplaints(c.email), { print: true, ai: state.ai.dive[c.email] || null, financial: clientFinancial(c.email) }),
     }))
   },
   'case-pdf': () => {
@@ -1325,7 +1391,7 @@ const exporters = {
     if (!c) return alert('Click a client row first to open their case file.')
     printHtml(buildForensicHtmlDoc(null, state.fileName, {
       title: `Client case file — ${c.name || c.email}`,
-      body: renderCaseFile(c, clientTimeline(c.email), clientComplaints(c.email), { print: true, ai: state.ai.dive[c.email] || null }),
+      body: renderCaseFile(c, clientTimeline(c.email), clientComplaints(c.email), { print: true, ai: state.ai.dive[c.email] || null, financial: clientFinancial(c.email) }),
     }))
   },
   'complaints-csv': () => {

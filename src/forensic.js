@@ -20,6 +20,7 @@ export const CATEGORIES = [
       'escalate', 'escalation', 'terrible', 'worst', 'angry', 'frustrated', 'frustrating',
       'unresolved', 'still waiting', 'no response', 'misled', 'misleading', 'let down',
       'not good enough', 'demand', 'refund', 'compensation',
+      'malalamiko', 'sijaridhika', 'hatujaridhika', 'huduma mbaya', 'huduma duni', 'hakuna majibu', 'rudisha pesa', 'rejesha pesa', 'fidia',
     ],
   },
   {
@@ -30,6 +31,7 @@ export const CATEGORIES = [
       'subpoena', 'litigation', 'breach of contract', 'defamation', 'liable', 'liability',
       'damages', 'cease and desist', 'terminate', 'termination', 'dispute', 'arbitration',
       'small claims', 'settlement', 'notice of', 'without prejudice',
+      'mahakama', 'wakili', 'mwanasheria', 'kesi', 'mkataba', 'kuvunja mkataba', 'notisi', 'kisheria',
     ],
   },
   {
@@ -40,6 +42,7 @@ export const CATEGORIES = [
       'bank details', 'account number', 'sort code', 'routing number', 'chargeback',
       'fraud', 'fraudulent', 'unauthorized', 'unauthorised', 'refund', 'remittance',
       'purchase order', 'quotation', 'deposit', 'bitcoin', 'crypto', 'gift card',
+      'ankara', 'malipo', 'deni', 'salio', 'risiti', 'akaunti ya benki', 'malimbikizo', 'marejesho', 'tozo',
     ],
   },
   {
@@ -50,6 +53,7 @@ export const CATEGORIES = [
       'verify your account', 'reset your password', 'one-time', 'otp', '2fa',
       'account suspended', 'unusual activity', 'confirm your identity', 'click here',
       'update your details', 'security alert', 'locked', 'phishing', 'malware', 'ransomware',
+      'nywila', 'neno la siri', 'thibitisha akaunti', 'bonyeza hapa', 'akaunti yako imefungwa',
     ],
   },
   {
@@ -82,19 +86,32 @@ const SENSITIVE = [
 // --- Client-complaint detection -------------------------------------------
 // Sub-type tags let the register group complaints by what they're about.
 const COMPLAINT_TAGS = [
-  { tag: 'billing', re: /\b(invoice|overcharg|double charg|billed|bill|charge|refund|payment|overpaid|wrong amount)\w*/i },
-  { tag: 'delay', re: /\b(delay|late|overdue|still waiting|no response|not received|chasing|follow ?up|awaiting)\w*/i },
-  { tag: 'quality', re: /\b(faulty|broken|defect|damaged|not working|doesn'?t work|poor quality|substandard|wrong item)\w*/i },
-  { tag: 'service', re: /\b(rude|unhelpful|staff|agent|representative|attitude|ignored|hung up|customer service)\w*/i },
-  { tag: 'cancellation', re: /\b(cancel|terminate|close my account|refund|money back|switch provider)\w*/i },
+  { tag: 'billing', re: /\b(invoice|overcharg|double charg|billed|bill|charge|refund|payment|overpaid|wrong amount|ankara|malipo|tozo|deni|salio|risiti|nimelipishwa|rudish\w* pesa|rejesh\w* pesa)\w*/i },
+  { tag: 'delay', re: /\b(delay|late|overdue|still waiting|no response|not received|chasing|follow ?up|awaiting|kuchelew\w*|umechelewa|mmechelewa|bado nasubiri|bado sijapata|sijapata|hakuna majibu|hamjajibu|sijajibiwa)\w*/i },
+  { tag: 'quality', re: /\b(faulty|broken|defect|damaged|not working|doesn'?t work|poor quality|substandard|wrong item|mbovu|haifanyi kazi|imeharibika|ubora (?:duni|mbaya)|bidhaa mbaya)\w*/i },
+  { tag: 'service', re: /\b(rude|unhelpful|staff|agent|representative|attitude|ignored|hung up|customer service|huduma mbaya|huduma duni|wafanyakazi|mhudumu|kutojali|hamjali|mmenipuuza)\w*/i },
+  { tag: 'cancellation', re: /\b(cancel|terminate|close my account|refund|money back|switch provider|futa|sitisha|kusitisha|naomba kufunga|rudisha pesa|rejesha pesa|nahamia)\w*/i },
 ]
 // Words that make a complaint more serious / escalated.
-const ESCALATION_RE = /\b(unacceptable|escalat\w*|final (?:notice|warning)|last time|sue|lawyer|attorney|legal action|ombudsman|regulator|trading standards|small claims|cancel\w*|terminate\w*|never again|worst|disgrace\w*|furious|outrage\w*|demand\w*)\b/i
+const ESCALATION_RE = /\b(unacceptable|escalat\w*|final (?:notice|warning)|last time|sue|lawyer|attorney|legal action|ombudsman|regulator|trading standards|small claims|cancel\w*|terminate\w*|never again|worst|disgrace\w*|furious|outrage\w*|demand\w*|mahakama|wakili|mwanasheria|kesi|polisi|nitakushtaki|kushtaki|kuwashtaki|sitalipa|onyo la mwisho|mara ya mwisho|haikubaliki|sikubali|nitawaripoti|TCRA|FCC)\b/i
 // Any signal that a message is a complaint at all (superset of the category).
-const COMPLAINT_SIGNAL_RE = /\b(complain\w*|unhappy|dissatisf\w*|not happy|disappoint\w*|poor service|bad service|unacceptable|escalat\w*|terrible|worst|angry|furious|frustrat\w*|unresolved|still waiting|no response|misled|mislead\w*|let down|refund|compensation|faulty|broken|defect\w*|not working|overcharg\w*|rude|unhelpful|demand\w*|disgrace\w*)\b/i
+const COMPLAINT_SIGNAL_RE = /\b(complain\w*|unhappy|dissatisf\w*|not happy|disappoint\w*|poor service|bad service|unacceptable|escalat\w*|terrible|worst|angry|furious|frustrat\w*|unresolved|still waiting|no response|misled|mislead\w*|let down|refund|compensation|faulty|broken|defect\w*|not working|overcharg\w*|rude|unhelpful|demand\w*|disgrace\w*|malalamiko|lalamik\w*|sijaridhika|hatujaridhika|kutoridhika|haikubaliki|huduma mbaya|huduma duni|hakuna majibu|hamjajibu|bado nasubiri|sijapata|kuchelew\w*|umechelewa|mmechelewa|rudish\w* pesa|rejesh\w* pesa|fidia|nimekasirika|hasira|sikubali|mbovu|haifanyi kazi|imeharibika|ghali sana|kudanganywa|mmenidanganya|wizi|mmenipuuza|hamjali)\b/i
 
 // Business-email-compromise / payment-change requests — a core audit red flag.
 const BEC_RE = /\b((?:change|update|amend|new|different|revised|updated)[^.\n]{0,40}(?:bank|account|payment|remittance|beneficiary|banking) (?:details|account|number|information|info)|(?:remit|pay|wire|transfer)[^.\n]{0,30}(?:to (?:the )?(?:new|updated|different)|new account)|bank(?:ing)? details have changed|our (?:bank|account) has changed)\b/i
+// Financial register: amounts with currency, invoice numbers, due dates, status.
+const CURRENCY_RE = /(?:\b(TZS|TSH|USD|US\$|KES|KSH|UGX|EUR|GBP|ZAR|RWF)|([$€£]))\s?([0-9]{1,3}(?:[, ][0-9]{3})+(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)|\b([0-9]{1,3}(?:[, ][0-9]{3})+(?:\.[0-9]{1,2})?|[0-9]{3,}(?:\.[0-9]{1,2})?)\s?(TZS|TSH|USD|KES|KSH|UGX|EUR|GBP|ZAR|RWF|shillings?|shilingi|dollars?)\b/gi
+const CURRENCY_HINT_RE = /[$€£]|\b(?:TZS|TSH|USD|KES|KSH|UGX|EUR|GBP|ZAR|RWF|shilingi|shillings?|dollars?)\b/i
+const INVOICE_RE = /\b(?:invoice|inv\.?|ankara|proforma|receipt|risiti|quotation|quote|purchase order|P\.?O\.?)\s*(?:no\.?|number|num|#|namba|ref)?\s*[:#-]?\s*([A-Z]{0,5}[-\/]?[0-9]{2,}[A-Z0-9\/-]{0,12})/gi
+const DUE_RE = /\b(?:due|payable|deadline|pay by|paid by|before|kabla ya|tarehe ya mwisho)\s*(?:on|date|by)?\s*[:-]?\s*((?:\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4})|(?:\d{1,2}(?:st|nd|rd|th)?\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?,?\s*\d{4})|(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4}))/gi
+const FIN_STATUS = [
+  ['overdue', /\b(overdue|past due|late payment|outstanding|arrears|malimbikizo|umechelewa kulipa|haujalipa|deni)\b/i],
+  ['disputed', /\b(dispute|disputed|incorrect|wrong amount|overcharg\w*|double charg\w*|not agree|do not agree|refund|sikubali|siyo sahihi|kosa)\b/i],
+  ['paid', /\b(paid|payment received|settled|cleared|remitted|nimelipa|tumelipa|imelipwa|malipo yamepokelewa)\b/i],
+  ['unpaid', /\b(unpaid|not yet paid|awaiting payment|pending payment|please pay|kindly pay|haijalipwa|bado hajalipa|tafadhali lipa)\b/i],
+]
+const MAX_FIN_RECORDS = 2000
+
 // Explicit approval / sign-off language (governance signal).
 const APPROVAL_RE = /\b(approv\w*|authoris\w*|authoriz\w*|sign(?:ed)? off|sign-off|go ahead|greenlight|green light|proceed with|confirm(?:ed)? the (?:order|payment|purchase))\b/i
 
@@ -180,6 +197,13 @@ export class ForensicCollector {
     this.threads = new Map() // key -> { inbound: [{t, from}], outbound: [t] }
     this.threadsCapped = false
     this.parties = new Map() // email -> aggregate
+    // Staff (our side), financial register, and monthly trend counters.
+    this.staff = new Map() // outbound sender -> { email, name, sent, recipients:Set }
+    this.financialRecords = []
+    this.financialTotal = 0
+    this.inboundByMonth = {}
+    this.outboundByMonth = {}
+    this.complaintsByMonth = {}
   }
 
   // Per-address aggregate (internal vs external is decided at finalize once the
@@ -192,6 +216,8 @@ export class ForensicCollector {
         firstIn: null, lastIn: null, lastOut: null,
         complaints: { high: 0, medium: 0, low: 0 }, complaintTags: {}, escalated: 0,
         financial: 0, legal: 0, security: 0, bec: 0, refs: [],
+        complaintsByMonth: {},
+        fin: { amounts: {}, overdue: 0, disputed: 0, unpaid: 0, invoices: [] },
       }
       this.parties.set(email, p)
     }
@@ -256,6 +282,25 @@ export class ForensicCollector {
       }
     }
 
+    // Staff (our side): who sent what, and to whom.
+    if (isOut && m.senderEmail) {
+      let s = this.staff.get(m.senderEmail)
+      if (!s) {
+        s = { email: m.senderEmail, name: m.senderName || '', sent: 0, recipients: new Set() }
+        this.staff.set(m.senderEmail, s)
+      }
+      s.sent++
+      if (m.senderName && !s.name) s.name = m.senderName
+      for (const rcpt of m.recipientEmails || []) if (s.recipients.size < 500) s.recipients.add(rcpt)
+    }
+
+    // Monthly volumes for trends.
+    const mkey = monthKey(t)
+    if (mkey) {
+      if (isIn) this.inboundByMonth[mkey] = (this.inboundByMonth[mkey] || 0) + 1
+      if (isOut) this.outboundByMonth[mkey] = (this.outboundByMonth[mkey] || 0) + 1
+    }
+
     // Conversation-thread events: lets us match a reply to the thread it
     // answers, instead of "any later email to that person".
     const tkey = threadKey(m.topic, m.subject)
@@ -269,7 +314,7 @@ export class ForensicCollector {
       }
       if (th) {
         if (isIn && m.senderEmail && th.inbound.length < MAX_THREAD_EVENTS) th.inbound.push({ t, from: m.senderEmail })
-        if (isOut && th.outbound.length < MAX_THREAD_EVENTS) th.outbound.push(t)
+        if (isOut && th.outbound.length < MAX_THREAD_EVENTS) th.outbound.push({ t, from: m.senderEmail || '' })
       }
     }
 
@@ -322,11 +367,13 @@ export class ForensicCollector {
     const subject = m.subject || ''
     const body = this.deepScan ? (m.bodyText || '') : ''
     const haystack = body ? subject + '\n' + body : subject
+    let finHit = false
     for (const c of CATEGORY_MATCHERS) {
       const match = c.re.exec(haystack)
       if (!match) continue
       const bucket = this.categories[c.key]
       bucket.count++
+      if (c.key === 'financial') finHit = true
       // Attribute financial / legal / security signals to the sending client.
       if (isIn && m.senderEmail && (c.key === 'financial' || c.key === 'legal' || c.key === 'security')) {
         const p = this.#party(m.senderEmail, m.senderName)
@@ -388,8 +435,10 @@ export class ForensicCollector {
         p.complaints[severity]++
         for (const tg of tags) p.complaintTags[tg] = (p.complaintTags[tg] || 0) + 1
         if (escalated) p.escalated++
+        if (mkey) p.complaintsByMonth[mkey] = (p.complaintsByMonth[mkey] || 0) + 1
         this.#noteRef(p, 'complaint', ref, subject, m.date)
       }
+      if (mkey) this.complaintsByMonth[mkey] = (this.complaintsByMonth[mkey] || 0) + 1
     }
 
     // Payment/bank-change request — a business-email-compromise audit flag.
@@ -406,15 +455,57 @@ export class ForensicCollector {
     }
     if (APPROVAL_RE.test(haystack)) this.approvals++
 
+    // Financial register: amounts, invoice numbers, due dates and status,
+    // attributed to the client on the other side of the message.
+    if (finHit || CURRENCY_HINT_RE.test(haystack)) {
+      const fin = extractFinancial(haystack)
+      if (finHit || fin.amounts.length || fin.invoices.length) {
+        this.financialTotal++
+        let status = 'unknown'
+        for (const [name, re] of FIN_STATUS) if (re.test(haystack)) { status = name; break }
+        const client = isIn ? (m.senderEmail || '') : (isOut && m.recipientEmails && m.recipientEmails[0]) || ''
+        if (this.financialRecords.length < MAX_FIN_RECORDS) {
+          const at = haystack.search(CURRENCY_HINT_RE)
+          this.financialRecords.push({
+            ref, messageId, id: m.id ?? null, date: t, dir: isIn ? 'in' : isOut ? 'out' : 'other',
+            from: m.senderEmail || m.senderName, client, clientName: isIn ? (m.senderName || '') : '',
+            subject, folder: m.folderPath, amounts: fin.amounts, invoices: fin.invoices, dueDates: fin.dueDates, status,
+            snippet: snippet(haystack, Math.max(0, at)),
+          })
+        }
+        if (client) {
+          const p = this.#party(client, isIn ? m.senderName : '')
+          const maxByCur = {}
+          for (const a of fin.amounts) if (a.value > (maxByCur[a.currency] || 0)) maxByCur[a.currency] = a.value
+          for (const [cur, v] of Object.entries(maxByCur)) p.fin.amounts[cur] = (p.fin.amounts[cur] || 0) + v
+          if (status === 'overdue') p.fin.overdue++
+          else if (status === 'disputed') p.fin.disputed++
+          else if (status === 'unpaid') p.fin.unpaid++
+          for (const inv of fin.invoices) if (p.fin.invoices.length < 20 && !p.fin.invoices.includes(inv)) p.fin.invoices.push(inv)
+        }
+      }
+    }
+
     return ref
   }
 
   finalize(opts = {}) {
-    const complaints = this.#buildComplaints(opts.primaryDomain || '')
-    const audit = this.#buildAudit(complaints, opts.primaryDomain || '')
-    const clients = this.#buildClients(opts.primaryDomain || '')
+    const primaryDomain = opts.primaryDomain || ''
+    const ours = (opts.ourDomains || []).map((d) => String(d).toLowerCase().trim()).filter(Boolean)
+    // "Internal" = our own organisation: the domains the user told us, or
+    // (fallback) the busiest sending domain.
+    const internal = (domain) => (ours.length ? ours.includes(domain) : !!primaryDomain && domain === primaryDomain)
+    const complaints = this.#buildComplaints(internal)
+    const audit = this.#buildAudit(complaints)
+    const { clients, staff, trends } = this.#buildClients(internal)
+    const financial = this.#buildFinancial(internal)
     return {
       clients,
+      staff,
+      trends,
+      financial,
+      ourDomains: ours,
+      primaryDomain,
       deepScan: this.deepScan,
       total: this.total,
       sent: this.sent,
@@ -450,17 +541,17 @@ export class ForensicCollector {
 
   // Resolve raw complaint records into a register: mark external clients and
   // whether the mailbox owner replied, then summarise.
-  #buildComplaints(primaryDomain) {
+  #buildComplaints(internal) {
     const SEV_ORDER = { high: 0, medium: 1, low: 2 }
     const records = this.complaints.map((c) => {
       const dom = domainOf(c.client)
-      const external = !!c.client && (!primaryDomain || dom !== primaryDomain)
+      const external = !!c.client && !internal(dom)
       // Thread-accurate: answered only if an outbound message exists in the
       // same conversation after the complaint. Falls back to "any later mail
       // to that person" when the thread wasn't trackable.
       const th = c.thread ? this.threads.get(c.thread) : null
       let responded
-      if (th && c.date != null) responded = th.outbound.some((o) => o >= c.date)
+      if (th && c.date != null) responded = th.outbound.some((o) => o.t >= c.date)
       else {
         const reply = c.client ? this.sentTo.get(c.client) : undefined
         responded = reply !== undefined && (c.date == null || reply >= c.date)
@@ -492,20 +583,47 @@ export class ForensicCollector {
 
   // Per-client intelligence: volumes, problems, financial flags and
   // thread-accurate responsiveness, scored for "attention needed".
-  #buildClients(primaryDomain) {
-    // Responsiveness per inbound sender, from conversation-thread events.
+  #buildClients(internal) {
+    // Responsiveness per inbound sender, from conversation-thread events —
+    // and, for each reply, which staff member gave it.
     const resp = new Map()
+    const staffResp = new Map() // staff email -> { answered, unanswered, deltas }
+    const respByMonth = {} // 'YYYY-MM' -> response deltas (capped)
+    let unassignedUnanswered = 0
+    const sr = (email) => {
+      let s = staffResp.get(email)
+      if (!s) { s = { answered: 0, unanswered: 0, deltas: [] }; staffResp.set(email, s) }
+      return s
+    }
     for (const th of this.threads.values()) {
       if (!th.inbound.length) continue
-      const outs = th.outbound.slice().sort((a, b) => a - b)
+      const outs = th.outbound.slice().sort((a, b) => a.t - b.t)
       for (const ev of th.inbound) {
         let r = resp.get(ev.from)
         if (!r) { r = { answered: 0, unanswered: 0, deltas: [] }; resp.set(ev.from, r) }
-        const next = outs.find((o) => o >= ev.t)
+        const next = outs.find((o) => o.t >= ev.t)
+        const mk = monthKey(ev.t)
         if (next !== undefined) {
+          const d = next.t - ev.t
           r.answered++
-          if (r.deltas.length < 200) r.deltas.push(next - ev.t)
-        } else r.unanswered++
+          if (r.deltas.length < 200) r.deltas.push(d)
+          if (next.from) {
+            const s = sr(next.from)
+            s.answered++
+            if (s.deltas.length < 500) s.deltas.push(d)
+          }
+          if (mk) {
+            if (!respByMonth[mk]) respByMonth[mk] = []
+            if (respByMonth[mk].length < 300) respByMonth[mk].push(d)
+          }
+        } else {
+          r.unanswered++
+          // Owner = the staff member who last replied in this thread before it went quiet.
+          let owner = ''
+          for (const o of outs) if (o.t <= ev.t && o.from) owner = o.from
+          if (owner) sr(owner).unanswered++
+          else unassignedUnanswered++
+        }
       }
     }
 
@@ -516,7 +634,7 @@ export class ForensicCollector {
     for (const p of this.parties.values()) {
       if (!p.email) continue
       const domain = domainOf(p.email)
-      if (primaryDomain && domain === primaryDomain) continue // internal staff
+      if (internal(domain)) continue // our own staff
       if (p.inbound === 0 && p.outbound === 0) continue
       const r = resp.get(p.email) || { answered: 0, unanswered: 0, deltas: [] }
       const median = medianOf(r.deltas)
@@ -541,6 +659,7 @@ export class ForensicCollector {
         answered: r.answered, unanswered: r.unanswered,
         medianResponseHours: median == null ? null : Math.round((median / 36e5) * 10) / 10,
         score, label: label(score), refs: p.refs,
+        complaintsByMonth: p.complaintsByMonth, fin: p.fin,
       })
     }
     list.sort((a, b) => b.score - a.score || b.total - a.total)
@@ -568,8 +687,32 @@ export class ForensicCollector {
     const domains = [...byDomain.values()].sort((a, b) => b.score - a.score || b.inbound - a.inbound)
     for (const d of domains) d.label = label(d.score)
 
+    // Staff accountability: replies sent, clients handled, answered /
+    // unanswered (owned), median response — per person on our side.
+    const staffList = []
+    for (const s of this.staff.values()) {
+      const r = staffResp.get(s.email) || { answered: 0, unanswered: 0, deltas: [] }
+      const med = medianOf(r.deltas)
+      let clientsHandled = 0
+      for (const e of s.recipients) if (!internal(domainOf(e))) clientsHandled++
+      staffList.push({
+        email: s.email, name: s.name, internal: internal(domainOf(s.email)),
+        sent: s.sent, clients: clientsHandled, answered: r.answered, unanswered: r.unanswered,
+        medianResponseHours: med == null ? null : Math.round((med / 36e5) * 10) / 10,
+      })
+    }
+    staffList.sort((a, b) => b.unanswered - a.unanswered || b.sent - a.sent)
+
+    // Monthly trends.
+    const months = [...new Set([...Object.keys(this.byMonth), ...Object.keys(this.complaintsByMonth)])].sort()
+    const trends = { months, inbound: this.inboundByMonth, outbound: this.outboundByMonth, complaints: this.complaintsByMonth, medianResponseHours: {} }
+    for (const mk of months) {
+      const md = medianOf(respByMonth[mk] || [])
+      trends.medianResponseHours[mk] = md == null ? null : Math.round((md / 36e5) * 10) / 10
+    }
+
     const overallMedian = medianOf(allDeltas)
-    return {
+    const clients = {
       total: list.length,
       atRisk: list.filter((c) => c.label === 'at-risk' || c.label === 'critical').length,
       unansweredTotal,
@@ -578,10 +721,48 @@ export class ForensicCollector {
       list: list.slice(0, MAX_CLIENTS_OUT),
       domains: domains.slice(0, MAX_DOMAINS_OUT),
     }
+    return { clients, staff: { list: staffList, unassignedUnanswered }, trends }
+  }
+
+  // Financial register: every message with money/invoice content, totals by
+  // currency, and a per-client roll-up (overdue / disputed / unpaid).
+  #buildFinancial(internal) {
+    const totals = {}
+    let overdue = 0
+    let disputed = 0
+    let unpaid = 0
+    const byClient = new Map()
+    for (const r of this.financialRecords) {
+      if (r.status === 'overdue') overdue++
+      else if (r.status === 'disputed') disputed++
+      else if (r.status === 'unpaid') unpaid++
+      const maxByCur = {}
+      for (const a of r.amounts) if (a.value > (maxByCur[a.currency] || 0)) maxByCur[a.currency] = a.value
+      for (const [cur, v] of Object.entries(maxByCur)) totals[cur] = (totals[cur] || 0) + v
+      if (r.client && !internal(domainOf(r.client))) {
+        let c = byClient.get(r.client)
+        if (!c) {
+          c = { client: r.client, name: r.clientName || '', records: 0, amounts: {}, overdue: 0, disputed: 0, unpaid: 0, invoices: new Set(), lastDate: null }
+          byClient.set(r.client, c)
+        }
+        c.records++
+        if (!c.name && r.clientName) c.name = r.clientName
+        for (const [cur, v] of Object.entries(maxByCur)) c.amounts[cur] = (c.amounts[cur] || 0) + v
+        if (r.status === 'overdue') c.overdue++
+        else if (r.status === 'disputed') c.disputed++
+        else if (r.status === 'unpaid') c.unpaid++
+        for (const inv of r.invoices) if (c.invoices.size < 30) c.invoices.add(inv)
+        if (r.date != null && (c.lastDate == null || r.date > c.lastDate)) c.lastDate = r.date
+      }
+    }
+    const clients = [...byClient.values()].map((c) => ({ ...c, invoices: [...c.invoices] }))
+      .sort((a, b) => (b.overdue + b.disputed + b.unpaid) - (a.overdue + a.disputed + a.unpaid) || b.records - a.records)
+      .slice(0, 300)
+    return { records: this.financialRecords, total: this.financialTotal, totals, overdue, disputed, unpaid, clients }
   }
 
   // Assemble an auditor's findings register, most-severe first.
-  #buildAudit(complaints, primaryDomain) {
+  #buildAudit(complaints) {
     const findings = []
     const add = (severity, category, title, detail, samples) =>
       findings.push({ severity, category, title, detail, samples: samples || [] })
@@ -593,6 +774,13 @@ export class ForensicCollector {
         'Incoming complaints from external clients with no matching outbound response — potential SLA breach or unresolved dispute.',
         complaints.records.filter((r) => r.external && !r.responded).slice(0, 10)
           .map((r) => ({ ref: r.ref, messageId: r.messageId, from: r.client || r.clientName, subject: r.subject, date: r.date, folder: r.folder })))
+    }
+    const dueRecs = this.financialRecords.filter((r) => r.status === 'overdue' || r.status === 'unpaid')
+    if (dueRecs.length) {
+      add('medium', 'Receivables',
+        `${dueRecs.length} overdue / unpaid payment message(s)`,
+        'Emails referencing overdue or unpaid amounts — reconcile against the ledger and chase.',
+        dueRecs.slice(0, 10).map((r) => ({ ref: r.ref, messageId: r.messageId, from: r.from, subject: r.subject, date: r.date, folder: r.folder })))
     }
     if (this.becTotal > 0) {
       const ext = this.bec.filter((b) => !b.sent)
@@ -689,6 +877,49 @@ function threadKey(topic, subject) {
   s = s.replace(/^\s*(?:\[[^\]]*\]\s*)?(?:(?:re|fw|fwd|aw|sv|vs|tr|wg|antw)\s*(?:\[\d+\])?\s*:\s*)+/i, '')
   s = s.replace(/\s+/g, ' ').trim()
   return s.length >= 2 ? s : ''
+}
+
+function monthKey(t) {
+  if (t == null) return ''
+  const d = new Date(t)
+  if (isNaN(d)) return ''
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+function normCurrency(c) {
+  const u = String(c || '').toUpperCase()
+  if (u === '$' || u === 'US$' || u === 'DOLLAR' || u === 'DOLLARS') return 'USD'
+  if (u === '£') return 'GBP'
+  if (u === '€') return 'EUR'
+  if (u === 'TSH') return 'TZS'
+  if (u === 'KSH') return 'KES'
+  if (u === 'SHILLING' || u === 'SHILLINGS' || u === 'SHILINGI') return 'SH'
+  return u || 'N/A'
+}
+
+/** Pull amounts (with currency), invoice numbers and due dates out of text. */
+export function extractFinancial(text) {
+  const amounts = []
+  for (const m of String(text || '').matchAll(CURRENCY_RE)) {
+    const currency = normCurrency(m[1] || m[2] || m[5])
+    const value = parseFloat(String(m[3] || m[4] || '').replace(/[ ,]/g, ''))
+    if (!isFinite(value) || value <= 0) continue
+    amounts.push({ currency, value })
+    if (amounts.length >= 12) break
+  }
+  const invoices = []
+  for (const m of String(text || '').matchAll(INVOICE_RE)) {
+    const v = m[1].trim()
+    if (v.length >= 3 && !invoices.includes(v)) invoices.push(v)
+    if (invoices.length >= 8) break
+  }
+  const dueDates = []
+  for (const m of String(text || '').matchAll(DUE_RE)) {
+    const v = m[1].trim()
+    if (!dueDates.includes(v)) dueDates.push(v)
+    if (dueDates.length >= 5) break
+  }
+  return { amounts, invoices, dueDates }
 }
 
 function medianOf(values) {

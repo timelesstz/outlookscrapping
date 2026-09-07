@@ -116,13 +116,17 @@ export function formatMessages(messages, { perMessage = 1500, total = 40000 } = 
   return out.join('\n')
 }
 
-export function deepDivePrompt(client, messages, complaints) {
+export function deepDivePrompt(client, messages, complaints, financial = []) {
+  const fin = financial.slice(0, 40).map((r) => `[${r.ref}] ${when(r.date)} ${r.dir === 'in' ? 'from client' : 'to client'} — ${r.status} — ${r.amounts.map((a) => `${a.currency} ${a.value}`).join(', ') || 'no amount'}${r.invoices.length ? ` — invoice ${r.invoices.join(', ')}` : ''}${r.dueDates.length ? ` — due ${r.dueDates.join(', ')}` : ''} — ${r.subject}`).join('\n') || '(none extracted)'
   const flagged = complaints.map((c) => `[${c.ref}] ${when(c.date)} ${c.severity.toUpperCase()} ${c.tags.join('/')} — ${c.subject} — ${c.snippet}`).join('\n') || '(none flagged)'
   return `CLIENT: ${client.name || ''} <${client.email}> (${client.domain})
 STATS: ${client.inbound} messages from client, ${client.outbound} replies to client, ${client.unanswered} unanswered in thread, median response ${client.medianResponseHours ?? 'unknown'} hours, complaints H/M/L ${client.complaints.high}/${client.complaints.medium}/${client.complaints.low}, financial messages ${client.financial}, payment-change requests ${client.bec}.
 
 KEYWORD-FLAGGED COMPLAINTS (may include false positives):
 ${flagged}
+
+FINANCIAL ITEMS EXTRACTED BY KEYWORD (verify against the emails):
+${fin}
 
 CORRESPONDENCE (chronological):
 ${formatMessages(messages)}

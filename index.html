@@ -6,8 +6,8 @@
   <title>Timeless Outlook Extractor</title>
   <meta name="description" content="Extract email addresses, messages, and contacts from Outlook PST/OST files — entirely in your browser. No installation, no upload to any server." />
   <link rel="icon" href="data:image/svg+xml,&lt;svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'&gt;&lt;text y='80' font-size='80'&gt;🛡️&lt;/text&gt;&lt;/svg&gt;" />
-  <script type="module" crossorigin src="./assets/index-BofImwwZ.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-CGyRulrQ.css">
+  <script type="module" crossorigin src="./assets/index-DmJhCost.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-D-222xfq.css">
 </head>
 <body>
   <canvas id="cyber-bg" aria-hidden="true"></canvas>
@@ -146,6 +146,7 @@
           <button id="forensic-deep-search" class="btn btn-secondary" title="Search inside message bodies for this keyword">Search bodies</button>
           <button id="forensic-ai-review" class="btn btn-secondary" title="Have DeepSeek read the flagged complaints and confirm or dismiss each">🤖 Review complaints</button>
           <button id="forensic-ai-apply" class="btn btn-secondary" title="Mark the complaints the AI judged as not-complaints as Dismissed in triage">Apply AI dismissals</button>
+          <button id="forensic-ai-exec" class="btn" title="Have DeepSeek brief you on what is going on across all clients">🤖 Executive summary</button>
           <span class="spacer"></span>
           <span class="export-label">Report:</span>
           <button class="btn" data-export="forensic-pdf">PDF</button>
@@ -158,6 +159,15 @@
           <button class="btn" data-export="complaints-xlsx">Complaints Excel</button>
           <button class="btn" data-export="audit-csv">Audit CSV</button>
           <button class="btn" data-export="audit-xlsx">Audit Excel</button>
+        </div>
+        <div class="toolbar period-bar">
+          <span class="export-label">Period:</span>
+          <input type="date" id="period-from" title="From" />
+          <span class="fx-muted">→</span>
+          <input type="date" id="period-to" title="To" />
+          <button id="period-apply" class="btn btn-secondary">Apply</button>
+          <button id="period-clear" class="btn btn-secondary">Clear</button>
+          <span id="period-note" class="fx-muted"></span>
         </div>
         <div class="toolbar ai-ask">
           <input type="text" id="ask-input" placeholder="🤖 Ask the mailbox… e.g. which clients complained about late delivery and never got a reply?" />

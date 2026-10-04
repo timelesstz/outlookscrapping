@@ -52,6 +52,44 @@ try {
   console.log('Downloads:', downloads)
   assert.equal(downloads.length, 3, `expected 3 downloads, got ${downloads.length}`)
 
+  // --- Forensic report + Clients combined view (second scenario) ---
+  const page2 = await browser.newPage()
+  const errs2 = []
+  page2.on('pageerror', (err) => errs2.push(err.message))
+  await page2.goto('http://localhost:4173/')
+  await page2.fill('#scope-domains', 'enron.com')
+  await page2.check('#scope-forensic')
+  await page2.check('#scope-deepscan')
+  await page2.setInputFiles('#file-input', FIXTURE)
+  await page2.waitForSelector('#results-screen:not([hidden])', { timeout: 60000 })
+  // Forensic tab shows the key sections
+  await page2.click('.tab[data-tab="forensic"]')
+  await page2.waitForSelector('#forensic-report .fx-section', { timeout: 15000 })
+  const sections = await page2.$$eval('#forensic-report .fx-section > h3', (hs) => hs.map((h) => h.textContent))
+  for (const want of ['Audit findings', 'Systemic problems', 'Financial register', 'Client complaints']) {
+    assert.ok(sections.some((t) => t.includes(want)), `forensic report missing section: ${want}`)
+  }
+  // Clients tab: add a second mailbox and confirm the combined count grows
+  await page2.click('.tab[data-tab="clients"]')
+  const clientsBefore = await page2.$$eval('#clients-view .cl-row[data-client]', (r) => r.length)
+  assert.ok(clientsBefore > 0, 'expected clients before combine')
+  await page2.setInputFiles('#add-file-input', 'node_modules/pst-extractor/example/testdata/pstextractortest@outlook.com.ost')
+  await page2.waitForFunction(() => /2 mailboxes/.test(document.querySelector('#file-summary').textContent), null, { timeout: 60000 })
+  await page2.click('.tab[data-tab="clients"]')
+  const clientsAfter = await page2.$$eval('#clients-view .cl-row[data-client]', (r) => r.length)
+  assert.ok(clientsAfter > clientsBefore, `combined view should add clients (${clientsBefore} -> ${clientsAfter})`)
+  // Open a client case file, then export the forensic workbook
+  const fxDownloads = []
+  page2.on('download', (d) => fxDownloads.push(d.suggestedFilename()))
+  await page2.click('#clients-view .cl-row[data-client]')
+  await page2.waitForSelector('#client-case:not([hidden])', { timeout: 10000 })
+  await page2.click('.tab[data-tab="forensic"]')
+  await page2.click('[data-export="forensic-xlsx"]')
+  await page2.waitForTimeout(1500)
+  assert.ok(fxDownloads.length >= 1, 'forensic workbook should download')
+  assert.deepEqual(errs2, [], `forensic page errors: ${errs2.join('; ')}`)
+  console.log('Forensic + Clients scenario passed. Sections:', sections.length, '| clients', clientsBefore, '->', clientsAfter)
+
   assert.deepEqual(pageErrors, [], `page errors: ${pageErrors.join('; ')}`)
   await page.screenshot({ path: 'test/screenshot.png', fullPage: true })
   console.log('Browser test passed.')

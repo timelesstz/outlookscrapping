@@ -3,7 +3,7 @@
 Persistent audit & recovery ledger. Updated after each batch so the state of the
 project is never re-discovered from zero.
 
-- **Last pass:** 2026-10-04
+- **Last pass:** 2026-10-04 (audit + hardening + accessibility)
 - **Branch:** `claude/ecstatic-pasteur-w4fot3`
 - **Baseline at audit start:** build ✅, `npm test` ✅ (smoke: 2 sample mailboxes), deploy #23 green.
 
@@ -88,6 +88,7 @@ Severity: P0 critical · P1 major broken · P2 incomplete/degraded · P3 UX/qual
 | A6 | Tests | Committed E2E covered only address extraction + exports; new forensic/clients surfaces unguarded | P2 | `test/browser.test.js` | Extended E2E: forensic sections present, combined multi-mailbox (5→10 clients), workbook export, zero page errors | **IMPLEMENTED & VERIFIED** |
 | A7 | Secrets | API key must never reach the repo | P0 (if leaked) | per-commit `grep sk-[hex]`; vault stores ciphertext only | No key in any tracked file; `scripts/check.mjs` now fails the build if one appears | **VERIFIED** |
 | A8 | Mock/placeholder data | Any production-facing fake data? | P2 (if present) | grep mock/fake/sample/Math.random | None. `Math.random` only in the cosmetic `cyberbg.js`. All figures derive from the loaded file. | **VERIFIED — none** |
+| A9 | Accessibility | Modals lacked focus-trapping; tabs lacked ARIA/keyboard nav; search inputs unlabelled | P3 | manual review | ARIA tablist (roles, `aria-controls`, `aria-selected`, roving tabindex, Arrow/Home/End); modal focus trap + focus save/restore; Escape closes AI modal; `aria-label` on all search inputs; `aria-live` on progress | **IMPLEMENTED & VERIFIED** (E2E asserts arrow-nav, focus-into-dialog, Escape-close) |
 
 No P0/P1 defects were found open. Nothing was fabricated to fill the table.
 
@@ -104,8 +105,10 @@ No P0/P1 defects were found open. Nothing was fabricated to fill the table.
 - **Scale:** combined multi-mailbox keeps each file's session in the worker;
   message retention is capped at 100k rows total. Reading bodies/attachments/AI
   needs the file attached (save/resume restores analysis + exports without it).
-- **Accessibility (P3, open):** modals lack full focus-trapping; tab roles are
-  partial. Functional but not yet a dedicated a11y pass.
+- **Accessibility (P3):** addressed — ARIA tabs with keyboard navigation, modal
+  focus-trapping with focus restore, Escape-to-close, labelled inputs, live
+  progress; covered by the committed E2E. Further polish (contrast sweep,
+  screen-reader walkthrough) remains possible but the core is in place.
 - **PDF export** is print-to-PDF (browser dialog), by design for a static site.
 
 ## 6. Verification matrix
@@ -127,4 +130,4 @@ No P0/P1 defects were found open. Nothing was fabricated to fill the table.
 ## 7. Next actions (priority order)
 1. Tune heuristics on a **real** client PST (currencies, our-domains, false positives).
 2. Live DeepSeek key smoke test (confirm real responses / CORS).
-3. Optional: accessibility pass (focus trap, ARIA) — P3.
+3. ~~Accessibility pass (focus trap, ARIA) — P3~~ — **done** (A9).

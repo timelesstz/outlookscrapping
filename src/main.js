@@ -386,8 +386,14 @@ function onParsed(data) {
 }
 
 // Tabs
-function activateTab(name) {
-  document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === name))
+function activateTab(name, focusTab = false) {
+  document.querySelectorAll('.tab').forEach((b) => {
+    const on = b.dataset.tab === name
+    b.classList.toggle('active', on)
+    b.setAttribute('aria-selected', on ? 'true' : 'false')
+    b.tabIndex = on ? 0 : -1
+    if (on && focusTab) b.focus()
+  })
   document.querySelectorAll('.tab-panel').forEach((p) => {
     p.hidden = p.id !== `tab-${name}`
   })
@@ -395,6 +401,54 @@ function activateTab(name) {
 
 document.querySelectorAll('.tab').forEach((btn) => {
   btn.addEventListener('click', () => activateTab(btn.dataset.tab))
+})
+
+// Accessibility: wire the tablist (roles, aria-controls, roving focus + arrows).
+;(function initTabsA11y() {
+  const tablist = document.querySelector('.tabs')
+  if (tablist) tablist.setAttribute('aria-label', 'Results sections')
+  document.querySelectorAll('.tabs .tab').forEach((b) => {
+    const name = b.dataset.tab
+    b.id = `tabbtn-${name}`
+    b.setAttribute('aria-controls', `tab-${name}`)
+    b.setAttribute('aria-selected', b.classList.contains('active') ? 'true' : 'false')
+    b.tabIndex = b.classList.contains('active') ? 0 : -1
+    const panel = document.getElementById(`tab-${name}`)
+    if (panel) { panel.setAttribute('role', 'tabpanel'); panel.setAttribute('aria-labelledby', b.id); panel.tabIndex = 0 }
+  })
+  tablist?.addEventListener('keydown', (e) => {
+    if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(e.key)) return
+    const vis = [...document.querySelectorAll('.tabs .tab')].filter((t) => !t.hidden)
+    const cur = vis.findIndex((t) => t.classList.contains('active'))
+    if (cur < 0) return
+    let i = cur
+    if (e.key === 'ArrowRight') i = (cur + 1) % vis.length
+    else if (e.key === 'ArrowLeft') i = (cur - 1 + vis.length) % vis.length
+    else if (e.key === 'Home') i = 0
+    else i = vis.length - 1
+    e.preventDefault()
+    activateTab(vis[i].dataset.tab, true)
+  })
+})()
+
+// Modal focus management: trap Tab inside an open overlay, remember/restore the
+// opener, and close on Escape.
+function focusablesIn(el) {
+  return [...el.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+    .filter((x) => x.offsetParent !== null && !x.closest('[hidden]'))
+}
+document.addEventListener('keydown', (e) => {
+  const ov = !$('#ai-overlay').hidden ? $('#ai-overlay') : (!$('#viewer-overlay').hidden ? $('#viewer-overlay') : null)
+  if (!ov) return
+  if (e.key === 'Tab') {
+    const f = focusablesIn(ov)
+    if (!f.length) return
+    const first = f[0]
+    const last = f[f.length - 1]
+    if (!ov.contains(document.activeElement)) { e.preventDefault(); first.focus() }
+    else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus() }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus() }
+  }
 })
 
 // Show only the tabs that were extracted, and open the first available one.
@@ -559,7 +613,9 @@ async function openViewer(id) {
   textEl.hidden = false
   htmlEl.hidden = true
   textEl.textContent = 'Loading…'
+  $('#viewer-overlay').__opener = document.activeElement
   $('#viewer-overlay').hidden = false
+  $('#viewer-close').focus()
 
   try {
     const [detail] = await requestDetails([id])
@@ -579,11 +635,14 @@ async function openViewer(id) {
 }
 
 function closeViewer() {
-  $('#viewer-overlay').hidden = true
+  const ov = $('#viewer-overlay')
+  ov.hidden = true
   $('#viewer-body-html').srcdoc = ''
   $('#viewer-attachments').hidden = true
   $('#viewer-attachments').innerHTML = ''
   state.viewerMessage = null
+  if (ov.__opener && ov.__opener.focus) { try { ov.__opener.focus() } catch { /* gone */ } }
+  ov.__opener = null
 }
 
 $('#viewer-close').addEventListener('click', closeViewer)
@@ -834,7 +893,9 @@ async function openAiSettings(view) {
     : v === 'passphrase' ? 'Locked — enter your admin passphrase.'
     : 'No key set — AI features are off.'
   $('#ai-advanced').open = v === 'none' && !on
-  $('#ai-overlay').hidden = false
+  const ov = $('#ai-overlay')
+  if (ov.hidden) ov.__opener = document.activeElement
+  ov.hidden = false
   const focus = { pinlogin: '#ai-pin', passphrase: '#ai-pass', pinset: '#ai-pin-new' }[v]
   if (focus) $(focus).focus()
 }
@@ -926,8 +987,15 @@ async function pinLogin() {
   }
 }
 $('#ai-settings-btn').addEventListener('click', openAiSettings)
-$('#ai-close').addEventListener('click', () => { $('#ai-overlay').hidden = true })
-$('#ai-overlay').addEventListener('click', (e) => { if (e.target.id === 'ai-overlay') $('#ai-overlay').hidden = true })
+function closeAiOverlay() {
+  const ov = $('#ai-overlay')
+  ov.hidden = true
+  if (ov.__opener && ov.__opener.focus) { try { ov.__opener.focus() } catch { /* gone */ } }
+  ov.__opener = null
+}
+$('#ai-close').addEventListener('click', closeAiOverlay)
+$('#ai-overlay').addEventListener('click', (e) => { if (e.target.id === 'ai-overlay') closeAiOverlay() })
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#ai-overlay').hidden) closeAiOverlay() })
 $('#ai-unlock').addEventListener('click', unlockVault)
 $('#ai-pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') unlockVault() })
 $('#ai-pin-login').addEventListener('click', pinLogin)

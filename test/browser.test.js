@@ -40,6 +40,24 @@ try {
   console.log('Opened message:', subject.trim())
   await page.keyboard.press('Escape')
 
+  // --- Accessibility: keyboard tab nav + modal focus handling ---
+  await page.click('.tab[data-tab="addresses"]')
+  await page.focus('#tabbtn-addresses')
+  await page.keyboard.press('ArrowRight')
+  const arrowTab = await page.evaluate(() => document.querySelector('.tab[aria-selected="true"]').dataset.tab)
+  assert.equal(arrowTab, 'messages', `ArrowRight should activate messages, got ${arrowTab}`)
+  const arrowFocus = await page.evaluate(() => document.activeElement?.dataset?.tab)
+  assert.equal(arrowFocus, 'messages', 'focus should follow arrow-key tab navigation')
+  // Opening a message moves focus into the dialog; Escape closes it
+  await page.click('.tab[data-tab="messages"]')
+  await page.click('#message-table tbody tr')
+  await page.waitForSelector('#viewer-overlay:not([hidden])')
+  const focusInDialog = await page.evaluate(() => document.querySelector('#viewer-overlay').contains(document.activeElement))
+  assert.ok(focusInDialog, 'focus should move into the viewer dialog on open')
+  await page.keyboard.press('Escape')
+  await page.waitForFunction(() => document.querySelector('#viewer-overlay').hidden, null, { timeout: 5000 })
+  await page.click('.tab[data-tab="addresses"]')
+
   // Exports produce downloads
   const downloads = []
   page.on('download', (d) => downloads.push(d.suggestedFilename()))
